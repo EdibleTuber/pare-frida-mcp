@@ -39,7 +39,9 @@ class CaptureStore:
     def open(cls, capture_dir: Path, session_id: str, blob_threshold: int) -> "CaptureStore":
         session_dir = Path(capture_dir) / session_id
         session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        conn = sqlite3.connect(session_dir / "capture.db")
+        db_path = session_dir / "capture.db"
+        conn = sqlite3.connect(db_path)
+        db_path.chmod(0o600)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(_SCHEMA)
@@ -68,8 +70,12 @@ class CaptureStore:
             blobs = self._dir / "blobs"
             blobs.mkdir(exist_ok=True, mode=0o700)
             blob_path = blobs / f"{seq}.bin"
-            blob_path.write_bytes(payload_json.encode("utf-8"))
-            blob_path.chmod(0o600)
+            try:
+                blob_path.write_bytes(payload_json.encode("utf-8"))
+                blob_path.chmod(0o600)
+            except OSError:
+                blob_path.unlink(missing_ok=True)
+                raise
             blob_ref = str(blob_path)
             self._conn.execute("UPDATE messages SET blob_ref=? WHERE seq=?", (blob_ref, seq))
 
