@@ -24,6 +24,15 @@ pare-frida-mcp = "pare_frida_mcp.server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pare_frida_mcp"]
 
+[tool.hatch.build]
+exclude = [
+    "src/pare_frida_mcp/agent/node_modules",
+    "src/pare_frida_mcp/agent/src",
+    "src/pare_frida_mcp/agent/package*.json",
+    "src/pare_frida_mcp/agent/tsconfig.json",
+    "src/pare_frida_mcp/agent/package-lock.json",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

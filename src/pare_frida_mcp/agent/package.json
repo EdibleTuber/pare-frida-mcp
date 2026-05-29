@@ -1,0 +1,12 @@
+{
+  "name": "pare-frida-mcp-agent",
+  "private": true,
+  "version": "0.1.0",
+  "devDependencies": {
+    "frida-compile": "^16",
+    "@types/frida-gum": "^18"
+  },
+  "scripts": {
+    "build": "frida-compile src/index.ts -o dist/agent.js -c"
+  }
+}
