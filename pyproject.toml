@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pare-frida-mcp"
+version = "0.1.0"
+description = "Frida dynamic-instrumentation MCP worker for PARE (Android v1)"
+requires-python = ">=3.12"
+dependencies = [
+    "frida>=17",
+    "mcp>=1.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.scripts]
+pare-frida-mcp = "pare_frida_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pare_frida_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
