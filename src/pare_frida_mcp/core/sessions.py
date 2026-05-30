@@ -19,6 +19,7 @@ class Session:
         self._queue: deque[dict] = deque()
         self._queue_bound = queue_bound
         self.dropped = 0
+        self.frida_session = None
         script.on("message", self._on_message)
 
     def _on_message(self, message: dict, data: Any) -> None:
@@ -44,6 +45,9 @@ class SessionManager:
                                   self._config.blob_threshold)
         self._sessions[sid] = Session(sid, script, pid, name, store, self._queue_bound)
         return sid
+
+    def get(self, session_id: str) -> Session:
+        return self._sessions[session_id]
 
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()

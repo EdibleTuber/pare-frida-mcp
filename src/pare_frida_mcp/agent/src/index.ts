@@ -1,3 +1,5 @@
+import Java from "frida-java-bridge";
+
 rpc.exports = {
   modules(filter?: string) {
     return Process.enumerateModules()
