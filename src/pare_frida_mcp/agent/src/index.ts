@@ -32,6 +32,14 @@ rpc.exports = {
     });
     return { hook: `${cls}.${method}` };
   },
+  javaHookRemove(cls: string, method: string, overload?: string) {
+    Java.perform(() => {
+      const klass = Java.use(cls);
+      const target = overload ? klass[method].overload(overload) : klass[method];
+      target.implementation = null;
+    });
+    return { removed: `${cls}.${method}` };
+  },
   memRead(address: string, size: number) {
     return ptr(address).readByteArray(size);
   },

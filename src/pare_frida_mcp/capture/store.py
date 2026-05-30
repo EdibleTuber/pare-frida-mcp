@@ -77,7 +77,15 @@ class CaptureStore:
                 blob_path.unlink(missing_ok=True)
                 raise
             blob_ref = str(blob_path)
-            self._conn.execute("UPDATE messages SET blob_ref=? WHERE seq=?", (blob_ref, seq))
+            # Null the row's payload column once the spill succeeds — the full
+            # JSON now lives in the blob file. Keeps the row small (the whole
+            # point of spill); read_capture restores payload from blob_ref.
+            # The FTS5 entry below still gets the full payload_json so search
+            # works on spilled records.
+            self._conn.execute(
+                "UPDATE messages SET payload=NULL, blob_ref=? WHERE seq=?",
+                (blob_ref, seq),
+            )
 
         self._conn.execute(
             "INSERT INTO messages_fts (rowid, summary, payload) VALUES (?,?,?)",

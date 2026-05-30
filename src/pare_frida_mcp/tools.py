@@ -28,7 +28,7 @@ def _ok(summary: str, **extra: Any) -> str:
 def _err(summary: str, exc: BaseException | None = None) -> str:
     payload = {"summary": summary, "error": True}
     if exc is not None:
-        payload["detail"] = f"{type(exc).__name__}: {exc}"[:200]
+        payload["detail"] = f"{type(exc).__name__}: {exc}"
     text, _ = bound_text(json.dumps(payload), _CAP)
     return text
 
@@ -104,9 +104,22 @@ async def execute_script(session_id: str, source: str) -> str:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
         value = scripts_mod.execute_ad_hoc(s.frida_session, source)
-        summary_text = json.dumps({"value": value})
-        bounded, truncated = bound_text(summary_text, _CAP)
-        return _ok("eval complete", truncated=truncated, result=json.loads(bounded)["value"]) if not truncated else _ok("eval complete (truncated)")
+        # §4.1: every return path is bounded, including arbitrary eval results.
+        # If the value fits the cap, return it inline; otherwise spill the full
+        # result into the capture store and hand back a capture handle so the
+        # agent can retrieve it via read_capture.
+        full = json.dumps({"value": value})
+        _, truncated = bound_text(full, _CAP)
+        if not truncated:
+            return _ok("eval complete", result=value)
+        seq = s.store.write({
+            "type": "send",
+            "source": "execute_script",
+            "summary": "eval result spilled (too large for inline return)",
+            "payload": {"value": value},
+        })
+        return _ok("eval complete (spilled)",
+                   capture={"session_id": sid, "seq": seq})
     except Exception as e:
         return _err("execute_script failed", e)
 
@@ -121,6 +134,16 @@ async def java_hook(session_id: str, cls: str, method: str, overload: str = "") 
         return _err("java_hook failed", e)
 
 
+async def java_hook_remove(session_id: str, cls: str, method: str, overload: str = "") -> str:
+    try:
+        sid = validate_session_id(session_id)
+        s = MANAGER.get(sid)
+        res = s.script.exports_sync.java_hook_remove(cls, method, overload or "")
+        return _ok(f"hook removed: {cls}.{method}", removed=res)
+    except Exception as e:
+        return _err("java_hook_remove failed", e)
+
+
 async def read_memory(session_id: str, address: str, size: int) -> str:
     try:
         sid = validate_session_id(session_id)
@@ -131,14 +154,6 @@ async def read_memory(session_id: str, address: str, size: int) -> str:
                    address=address, size=size, hex_preview=preview)
     except Exception as e:
         return _err("read_memory failed", e)
-
-
-async def scan_memory(session_id: str, pattern: str) -> str:
-    try:
-        validate_session_id(session_id)
-        return _err("scan_memory: deferred to fast-follow")
-    except Exception as e:
-        return _err("scan_memory failed", e)
 
 
 async def write_memory(session_id: str, address: str, bytes: str) -> str:

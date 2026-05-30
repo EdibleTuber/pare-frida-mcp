@@ -6,10 +6,22 @@ Frida 17 dynamic-instrumentation tools for Android (v1).
 ## Status
 
 Android v1: device/process discovery, attach, script load + ad-hoc eval, the
-message pump + SQLite capture store, Java hooking, and the full
-memory-inspection surface (enumerate / read / scan / write). iOS, SSL/root/JB
-bypasses, and the script vault are explicit fast-follows
+message pump + SQLite capture store, Java hooking (install + remove), and the
+memory-inspection surface (enumerate / read / write). iOS, SSL/root/JB
+bypasses, the script vault, and `scan_memory` are explicit fast-follows
 (see `docs/superpowers/specs/2026-05-28-pare-frida-mcp-worker-design.md`).
+
+### Known v1 limitations (tracked in spec §9)
+
+- `PARE_FRIDA_MAX_DISK_PER_SESSION` is read but **not enforced** in v1 — the
+  config variable exists for forward-compatibility, but `CaptureStore.write`
+  does not yet refuse on quota exceedance. Set the quota generously and watch
+  disk usage manually until enforcement lands.
+- The message pump persists on explicit `flush()` (triggered by capture-read
+  tool calls), not via a background timer; under a chatty hook between flushes,
+  messages can hit the in-memory queue bound and get dropped (with a counter).
+- Per-row SQLite commits in the pump are not yet batched — fine for v1
+  validation traffic, would need batching under a real high-frequency hook.
 
 ## Install
 

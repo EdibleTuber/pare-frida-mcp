@@ -282,6 +282,14 @@ ObjC helpers and stock-bypass installers are fast-follow additions to this surfa
 2. Android `bypass.py` (SSL pinning + root detection) and `core/native.py` (native hooks + backtraces).
 3. Script vault + improvise → vault → promote ladder (§3.4), with provenance enforcement.
 4. `search_blob` over spilled binary captures (§4).
+5. `scan_memory` — stub removed from v1 contract; reintroduce as a thin `Memory.scanSync` pass-through when needed.
+
+**v1-built but tracked-as-incomplete (correctness / robustness, not feature gaps):**
+- **`PARE_FRIDA_MAX_DISK_PER_SESSION` is not yet enforced.** The config knob exists; `CaptureStore.write` does not check it. Add a `du`-style check (db file size + blob dir size) before INSERT and refuse with a structured error when over quota (§5, §6).
+- **Pump batched WAL writes & background flush (§7 acceptance criterion).** Current pump commits per row inside `flush()`, and `flush()` only runs on demand from capture-read tools. Real chatty hooks need (a) a periodic flusher thread that drains the queue without a tool call, and (b) batched inserts inside a single transaction.
+- **`_on_message` thread safety.** Frida delivers messages on its own thread; concurrent `flush()` from a tool thread races the deque. Add a lock or swap to `queue.SimpleQueue`.
+- **`search_capture` truncation fallback.** When results exceed `byte_budget`, it currently returns `matches[:len//2]` without re-bounding; a halving loop or a force-`read_capture` fallback is the correct shape.
+- **Spawn semantics.** `attach` covers pid-or-name; the spec §6 spawn-with-suspend + opt-in-resume pattern (needed for early-anti-debug targets) is not implemented in v1.
 
 **External dependency (PARE-side, deferred by design):**
 - The enforcement *machinery* shipped (agent_core v1.5 `RiskAwareToolPool` — approval, audit, CLI prompt, fail-closed). What remains is the **`risk_overrides:` follow-up**: parse a patterns section in `workers.yaml` into the `(pattern, tier)` list `RiskGate` already accepts, and add the `frida` worker entry escalating `frida_write_memory` → high and `frida_execute_script` → critical. Deliberately deferred until this worker's tool surface is real (so the dangerous set is known). **Until it lands, treat this worker as ungated** beyond its `risk_default: low` floor.
