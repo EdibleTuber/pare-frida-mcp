@@ -1,0 +1,5 @@
+src/pare_frida_mcp/agent/node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
