@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from agent_core.workers.risk import RISK_TIER_META_KEY
 from pare_frida_mcp.contract import TOOL_SPECS
 from pare_frida_mcp import tools as tools_mod
 
@@ -12,7 +13,12 @@ def build_server() -> FastMCP:
         handler = getattr(tools_mod, spec.name, None)
         if handler is None:
             handler = _stub_for(spec.name)
-        server.add_tool(handler, name=spec.name, description=spec.description)
+        server.add_tool(
+            handler,
+            name=spec.name,
+            description=spec.description,
+            meta={RISK_TIER_META_KEY: spec.risk_tier},
+        )
     return server
 
 
