@@ -80,22 +80,21 @@ coexisting snapshots (per-query behavior). New method on `CaptureStore`:
 
 ```python
 def delete_by_source(self, source: str) -> int:
-    rows = self._conn.execute(
-        "SELECT seq FROM messages WHERE source=?", (source,)
-    ).fetchall()
-    for r in rows:
-        # External-content FTS5 requires explicit delete-sync.
-        self._conn.execute(
-            "INSERT INTO messages_fts(messages_fts, rowid, summary, payload) "
-            "VALUES ('delete', ?, '', '')", (r["seq"],)
-        )
-    self._conn.execute("DELETE FROM messages WHERE source=?", (source,))
+    cur = self._conn.execute("DELETE FROM messages WHERE source=?", (source,))
+    # messages_fts is an external-content FTS5 table. A 'delete' command would
+    # require re-supplying each row's original indexed values to remove the
+    # right terms; passing anything else orphans index entries (stale matches
+    # survive). Rebuilding re-syncs the whole index from the content table —
+    # foolproof, and cheap on an in-memory store capped at a few hundred rows.
+    self._conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
     self._conn.commit()
-    return len(rows)
+    return cur.rowcount
 ```
 
 (No blob cleanup needed: the in-memory store never spills. The plan notes this
-method is only correct for the spill-disabled in-memory store.)
+method is only correct for the spill-disabled in-memory store. The
+`delete-FTS-entry` round-trip test below specifically guards against the
+orphaned-index bug.)
 
 ### The `SnapshotStore` wrapper (new module `core/snapshots.py`)
 
