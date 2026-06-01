@@ -12,10 +12,12 @@ from pare_frida_mcp.core import memory as memory_mod
 from pare_frida_mcp.android import java as java_mod
 from pare_frida_mcp.capture.search import search_capture as _search_capture
 from pare_frida_mcp.capture.read import read_capture as _read_capture
+from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE
 from pare_frida_mcp.ids import validate_session_id
 
 CFG = load_config()
 MANAGER = SessionManager(CFG)
+SNAPSHOTS = SnapshotStore()
 _CAP = CFG.max_tool_bytes
 
 
@@ -31,6 +33,16 @@ def _err(summary: str, exc: BaseException | None = None) -> str:
         payload["detail"] = f"{type(exc).__name__}: {exc}"
     text, _ = bound_text(json.dumps(payload), _CAP)
     return text
+
+
+def _resolve_store(handle: str):
+    """Return (store, session). For the reserved snapshot handle, session is
+    None (no pending queue to flush); otherwise resolve the session store."""
+    if handle == SNAPSHOT_HANDLE:
+        return SNAPSHOTS.store, None
+    sid = validate_session_id(handle)
+    s = MANAGER.get(sid)
+    return s.store, s
 
 
 async def list_devices() -> str:
@@ -169,12 +181,12 @@ async def write_memory(session_id: str, address: str, bytes: str) -> str:
 async def search_capture(session_id: str, field: str = "", contains: str = "",
                          text: str = "", byte_budget: int = 0) -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
-        s.flush()  # ensure pending messages are persisted before searching
+        store, s = _resolve_store(session_id)
+        if s is not None:
+            s.flush()  # ensure pending messages are persisted before searching
         budget = byte_budget or _CAP
         res = _search_capture(
-            s.store,
+            store,
             field=field or None, contains=contains or None,
             text=text or None, byte_budget=budget,
         )
@@ -185,11 +197,11 @@ async def search_capture(session_id: str, field: str = "", contains: str = "",
 
 async def read_capture(session_id: str, seq: int, offset: int = 0, byte_budget: int = 0) -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
-        s.flush()
+        store, s = _resolve_store(session_id)
+        if s is not None:
+            s.flush()
         budget = byte_budget or _CAP
-        res = _read_capture(s.store, seq=seq, offset=offset, byte_budget=budget)
+        res = _read_capture(store, seq=seq, offset=offset, byte_budget=budget)
         return _ok(f"seq {seq}", **res)
     except Exception as e:
         return _err("read_capture failed", e)
