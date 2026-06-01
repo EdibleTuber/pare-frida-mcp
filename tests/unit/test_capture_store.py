@@ -59,4 +59,5 @@ def test_delete_by_source_removes_rows_and_fts_entries():
     assert search_capture(store, text="beta")["total"] == 0
     # The other source is untouched.
     assert search_capture(store, text="gamma")["total"] == 1
+    assert store.delete_by_source("enum:dev=NOEXIST") == 0
     store.close()
