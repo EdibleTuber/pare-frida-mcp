@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from urllib.parse import quote
 
 from pare_frida_mcp.capture.store import CaptureStore
 
 SNAPSHOT_HANDLE = "@snapshots"  # reserved; not a valid session id
 
 
-def snapshot_key(tool: str, **args) -> str:
-    """Stable per-query key: tool plus sorted non-empty args."""
-    parts = [tool] + [f"{k}={v}" for k, v in sorted(args.items()) if v not in ("", None)]
+def snapshot_key(tool: str, **kwargs) -> str:
+    """Stable per-query key: tool plus sorted non-empty args.
+
+    Segments are percent-encoded so a value containing ':' or '=' (e.g. a
+    filter string) can't produce a key that collides with a different query.
+    """
+    parts = [quote(tool, safe="")]
+    for k, v in sorted(kwargs.items()):
+        if v in ("", None):
+            continue
+        parts.append(f"{quote(k, safe='')}={quote(str(v), safe='')}")
     return ":".join(parts)
 
 
@@ -17,7 +26,9 @@ class SnapshotStore:
     """Sessionless, in-memory store of latest-per-query device snapshots.
 
     Replace semantics: re-running a query (same key) upserts that key's rows.
-    An LRU bound on distinct keys keeps a long session from growing unbounded.
+    An LRU bound on distinct keys keeps a long session from growing unbounded;
+    the default of 32 distinct queries is roughly a few hundred rows — tune
+    upward if a workflow holds many snapshots at once.
     """
 
     def __init__(self, max_keys: int = 32):
