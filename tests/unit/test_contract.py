@@ -20,3 +20,8 @@ def test_adapter_matches_agent_core_shape():
     tools = adapter.list_tools()
     for t in tools:
         assert {"name", "risk_tier", "input_schema", "output_schema"} <= set(t)
+
+def test_capture_tools_document_snapshot_handle():
+    by_name = {s.name: s for s in TOOL_SPECS}
+    assert "@snapshots" in by_name["search_capture"].description
+    assert "@snapshots" in by_name["read_capture"].description
