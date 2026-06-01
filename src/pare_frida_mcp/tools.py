@@ -5,13 +5,14 @@ from typing import Any
 
 from pare_frida_mcp.bounding import bound_text
 from pare_frida_mcp.config import load_config
-from pare_frida_mcp.core.sessions import SessionManager
+from pare_frida_mcp.core.sessions import Session, SessionManager
 from pare_frida_mcp.core import devices as devices_mod
 from pare_frida_mcp.core import scripts as scripts_mod
 from pare_frida_mcp.core import memory as memory_mod
 from pare_frida_mcp.android import java as java_mod
 from pare_frida_mcp.capture.search import search_capture as _search_capture
 from pare_frida_mcp.capture.read import read_capture as _read_capture
+from pare_frida_mcp.capture.store import CaptureStore
 from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE
 from pare_frida_mcp.ids import validate_session_id
 
@@ -35,7 +36,7 @@ def _err(summary: str, exc: BaseException | None = None) -> str:
     return text
 
 
-def _resolve_store(handle: str):
+def _resolve_store(handle: str) -> tuple[CaptureStore, Session | None]:
     """Return (store, session). For the reserved snapshot handle, session is
     None (no pending queue to flush); otherwise resolve the session store."""
     if handle == SNAPSHOT_HANDLE:

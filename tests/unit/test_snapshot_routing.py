@@ -44,6 +44,18 @@ async def test_search_capture_reads_snapshots_without_session():
 
 
 @pytest.mark.asyncio
+async def test_search_capture_flushes_session_path():
+    sid = new_session_id()
+    dummy = DummySession(CaptureStore.open_memory())
+    T.MANAGER._sessions[sid] = dummy
+    try:
+        await T.search_capture(sid, text="anything")
+        assert dummy.flushed is True  # session path must flush before searching
+    finally:
+        T.MANAGER._sessions.pop(sid, None)
+
+
+@pytest.mark.asyncio
 async def test_read_capture_reads_snapshot_row_without_session():
     T.SNAPSHOTS.replace("enumerate_processes:device_id=E", [{"pid": 7, "name": "soloproc"}])
     found = json.loads(await T.search_capture(SNAPSHOT_HANDLE, field="source",
