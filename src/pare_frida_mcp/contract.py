@@ -32,9 +32,21 @@ TOOL_SPECS: list[ToolSpec] = [
              _in(device_id={"type": "string"})),
     ToolSpec("attach", "medium", "Attach to a process by pid or name.",
              _in(device_id={"type": "string"}, target={"type": "string"})),
-    ToolSpec("enumerate_modules", "low", "List loaded modules.",
+    ToolSpec("enumerate_processes", "low",
+             "List processes running on a device into the @snapshots store. "
+             "Device-scoped: needs no attach/session - pass device_id (or omit "
+             "for the sole USB device). Returns a source key; read results with "
+             "search_capture(session_id='@snapshots', field='source', contains=<key>).",
+             _in(device_id={"type": "string"})),
+    ToolSpec("enumerate_applications", "low",
+             "List installed apps/packages on a device into the @snapshots store. "
+             "Device-scoped: no attach needed. 'identifier' is the package name. "
+             "Returns a source key; read with search_capture(session_id='@snapshots', "
+             "field='source', contains=<key>).",
+             _in(device_id={"type": "string"})),
+    ToolSpec("enumerate_modules", "low", "List modules loaded in an ATTACHED process (requires session_id from attach).",
              _in(session_id={"type": "string"}, filter={"type": "string"})),
-    ToolSpec("enumerate_exports", "low", "List exports of a module.",
+    ToolSpec("enumerate_exports", "low", "List exports of a module in an ATTACHED process (requires session_id from attach).",
              _in(session_id={"type": "string"}, module={"type": "string"})),
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),

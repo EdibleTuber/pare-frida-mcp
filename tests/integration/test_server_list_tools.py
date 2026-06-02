@@ -8,4 +8,5 @@ async def test_list_tools_exposes_all_contract_tools():
     tools = await server.list_tools()
     names = {t.name for t in tools}
     assert {"list_devices", "attach", "execute_script", "write_memory",
-            "search_capture", "read_capture"} <= names
+            "search_capture", "read_capture",
+            "enumerate_processes", "enumerate_applications"} <= names
