@@ -4,7 +4,7 @@
 
 **Goal:** Add device-scoped `enumerate_processes` and `enumerate_applications` tools that persist the full device list into the `@snapshots` store and return only a handle + source key, so a local model retrieves results via `search_capture` instead of consuming them inline.
 
-**Architecture:** Two pure map/sort functions in `core/devices.py`; two thin async handlers in `tools.py` that call `SNAPSHOTS.replace(snapshot_key(...), items)` and return `{summary, store, source, total}`; two `ToolSpec`s in `contract.py` plus description tightening on the existing enumerators and `execute_script`. The now-dead `page_items` helper (built for the abandoned inline-pagination approach) is removed.
+**Architecture:** Two pure map/sort functions in `core/devices.py`; two thin async handlers in `tools.py` that call `SNAPSHOTS.replace(snapshot_key(...), items)` and return `{summary, store, source, total}`; two `ToolSpec`s in `contract.py` plus a description clarification on the session-scoped enumerators so they aren't confused with the new device-scoped ones. The now-dead `page_items` helper (built for the abandoned inline-pagination approach) is removed.
 
 **Tech Stack:** Python 3, frida ≥17, FastMCP, pytest / pytest-asyncio.
 
@@ -16,7 +16,7 @@
 
 - `src/pare_frida_mcp/core/devices.py` — **modify**: add `enumerate_processes(device)`, `enumerate_applications(device)` (pure map + case-insensitive sort, `None`-name guard).
 - `src/pare_frida_mcp/tools.py` — **modify**: import `snapshot_key`; add `enumerate_processes`/`enumerate_applications` handlers.
-- `src/pare_frida_mcp/contract.py` — **modify**: add two `ToolSpec`s; tighten `enumerate_modules`, `enumerate_exports`, `execute_script` descriptions.
+- `src/pare_frida_mcp/contract.py` — **modify**: add two `ToolSpec`s; tighten `enumerate_modules`, `enumerate_exports` descriptions (clarify they need an attached session). `execute_script` is left unchanged — the new tools' own descriptions do the steering.
 - `src/pare_frida_mcp/bounding.py` — **modify**: remove `page_items` and its now-unused `import json`.
 - `tests/unit/test_device_enum.py` — **create**: device-layer function tests (fake device, no frida).
 - `tests/unit/test_tools_enum.py` — **create**: handler tests incl. end-to-end persist-then-search round-trip.
@@ -349,11 +349,10 @@ In `src/pare_frida_mcp/contract.py`, add these two entries to `TOOL_SPECS`, imme
              _in(device_id={"type": "string"})),
 ```
 
-Then change the three existing descriptions in place:
+Then change the two existing enumerator descriptions in place (so the session-scoped enumerators aren't confused with the new device-scoped ones). Leave `execute_script` unchanged.
 
 - `enumerate_modules` (line 35) description string → `"List modules loaded in an ATTACHED process (requires session_id from attach)."`
 - `enumerate_exports` (line 37) description string → `"List exports of a module in an ATTACHED process (requires session_id from attach)."`
-- `execute_script` (line 41) description string → `"Evaluate arbitrary JS in a session (critical/last resort). For listing devices, processes, applications, modules, or exports, use the dedicated low-risk enumerate_* tools instead."`
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -364,7 +363,7 @@ Expected: PASS. `test_wire_risk_tier.py` automatically confirms both new tools a
 
 ```bash
 git add src/pare_frida_mcp/contract.py tests/integration/test_server_list_tools.py
-git commit -m "feat(contract): register enumerate_processes/applications; redirect execute_script"
+git commit -m "feat(contract): register enumerate_processes/applications; clarify session-scoped enumerators"
 ```
 
 ---

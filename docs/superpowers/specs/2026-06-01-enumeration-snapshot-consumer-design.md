@@ -177,10 +177,15 @@ the persist-then-search retrieval go in the words:
   process (requires session_id from attach)."*
 - `enumerate_exports` (existing, tighten): *"List exports of a module in an
   ATTACHED process (requires session_id from attach)."*
-- `execute_script` (existing, redirect): append *"(critical/last resort). For
-  listing devices, processes, applications, modules, or exports, use the
-  dedicated low-risk enumerate_* tools instead."* — closes the recurrence path
-  that motivated this work.
+
+`execute_script` is **left unchanged**. The original incident (the model reaching
+for `execute_script` to list processes) had a single root cause: no matching tool
+existed. Adding well-described enumerate tools fixes that cause, and an LLM
+selects tools by matching descriptions, so the new tools do the steering. A
+denylist baked into `execute_script` would only couple its catalog entry to the
+existence of other tools (going stale as tools change) and muddy what it is for —
+running custom/arbitrary Frida JS. We rely on tool availability and will confirm
+the behavior in live testing.
 
 ### Error handling & device support
 
@@ -203,9 +208,10 @@ the persist-then-search retrieval go in the words:
   import `snapshot_key`, `SNAPSHOT_HANDLE`. (`SNAPSHOTS`, `_resolve_store`
   already exist.)
 - `contract.py` — **add** two `ToolSpec`s (`device_id` only, `risk_tier "low"`);
-  **tighten** `execute_script`, `enumerate_modules`, `enumerate_exports`
-  descriptions. Registration in `server.py` is automatic — implement handlers
-  *before* adding specs, or `server.py`'s `getattr` falls back to a `_stub`.
+  **tighten** `enumerate_modules`, `enumerate_exports` descriptions (clarify they
+  need an attached session). `execute_script` is left unchanged. Registration in
+  `server.py` is automatic — implement handlers *before* adding specs, or
+  `server.py`'s `getattr` falls back to a `_stub`.
 - `bounding.py` — **remove** `page_items` (dead code; only its own tests
   referenced it, and the inline-pagination approach it served is abandoned).
 - `tests/unit/test_bounding.py` — **remove** the `page_items` tests.
@@ -250,3 +256,8 @@ the persist-then-search retrieval go in the words:
   separate from this work.
 - `parameters` / icon data in application output (extensible later via an opt-in
   flag).
+- Auto-establishing a session inside `enumerate_modules`/`enumerate_exports` so
+  they don't require a prior `attach` — a candidate ergonomic improvement to
+  revisit after live testing of the new device-scoped tools gives a feel for how
+  the local model uses the enumerate family. For now those stay session-scoped
+  with the clarified descriptions.
