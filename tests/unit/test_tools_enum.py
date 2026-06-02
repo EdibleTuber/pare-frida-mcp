@@ -83,3 +83,23 @@ async def test_enumerate_applications_local_device_short_circuits(monkeypatch):
     assert res["total"] == 0
     assert "not supported" in res["summary"]
     assert res.get("error") is not True
+
+
+@pytest.mark.asyncio
+async def test_enumerate_processes_error_path(monkeypatch):
+    def boom(_id):
+        raise RuntimeError("device not found")
+    monkeypatch.setattr(devices_mod, "get_device", boom)
+    res = json.loads(await T.enumerate_processes(device_id="nope"))
+    assert res["error"] is True
+    assert "enumerate_processes failed" in res["summary"]
+
+
+@pytest.mark.asyncio
+async def test_enumerate_applications_error_path(monkeypatch):
+    def boom(_id):
+        raise RuntimeError("device not found")
+    monkeypatch.setattr(devices_mod, "get_device", boom)
+    res = json.loads(await T.enumerate_applications(device_id="nope"))
+    assert res["error"] is True
+    assert "enumerate_applications failed" in res["summary"]
