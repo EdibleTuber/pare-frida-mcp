@@ -49,3 +49,17 @@ def test_applications_mapped_sorted_by_identifier_and_request_minimal_scope():
     assert [a["identifier"] for a in res] == ["com.example.app", "org.other.thing"]
     assert res[0] == {"identifier": "com.example.app", "name": "Cool App", "pid": 0}
     assert dev.scope_used == "minimal"  # scope kwarg drives Frida fetch cost
+
+
+def test_applications_fallback_when_scope_kwarg_unsupported():
+    class NoScopeDevice:
+        type = "usb"
+        id = "emulator-5554"
+
+        def enumerate_applications(self, *args, **kwargs):
+            if "scope" in kwargs:
+                raise TypeError("enumerate_applications() got an unexpected keyword argument 'scope'")
+            return [FakeApp("com.a.b", "AB", 0)]
+
+    res = devices_mod.enumerate_applications(NoScopeDevice())
+    assert res == [{"identifier": "com.a.b", "name": "AB", "pid": 0}]
