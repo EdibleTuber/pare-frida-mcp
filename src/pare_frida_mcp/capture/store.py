@@ -30,7 +30,7 @@ _PROMOTE = {"hook": "hook", "url": "url", "method": "method", "class": "cls", "r
 
 
 class CaptureStore:
-    def __init__(self, conn: sqlite3.Connection, session_dir: Path, blob_threshold: int):
+    def __init__(self, conn: sqlite3.Connection, session_dir: Path | None, blob_threshold: int):
         self._conn = conn
         self._dir = session_dir
         self._blob_threshold = blob_threshold
@@ -46,6 +46,33 @@ class CaptureStore:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(_SCHEMA)
         return cls(conn, session_dir, blob_threshold)
+
+    @classmethod
+    def open_memory(cls, blob_threshold: int = 1 << 30) -> "CaptureStore":
+        """In-memory store for sessionless snapshots. Wiped when the process
+        exits. Spill is effectively disabled by the huge blob_threshold —
+        snapshot payloads are tiny, so write() never touches a session_dir
+        (which is None here)."""
+        conn = sqlite3.connect(":memory:")
+        # WAL is a no-op on :memory: (SQLite returns "memory"); omit it intentionally.
+        conn.row_factory = sqlite3.Row
+        conn.executescript(_SCHEMA)
+        return cls(conn, None, blob_threshold)
+
+    def delete_by_source(self, source: str) -> int:
+        """Delete all rows for a source key and re-sync the FTS index.
+
+        messages_fts is an external-content FTS5 table; a 'delete' command
+        would require re-supplying each row's original indexed values, and
+        anything else orphans index entries (stale text= matches survive).
+        Rebuilding re-syncs the whole index from the content table — foolproof,
+        and cheap on an in-memory store capped at a few hundred rows.
+        Does not remove blob files; safe only when blob spill has not occurred.
+        """
+        cur = self._conn.execute("DELETE FROM messages WHERE source=?", (source,))
+        self._conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
+        self._conn.commit()
+        return cur.rowcount
 
     def write(self, message: dict[str, Any]) -> int:
         payload = message.get("payload", {})
@@ -67,6 +94,11 @@ class CaptureStore:
 
         blob_ref = None
         if spill:
+            if self._dir is None:
+                raise RuntimeError(
+                    "blob spill triggered on an in-memory store (session_dir is None); "
+                    "increase blob_threshold or use CaptureStore.open()"
+                )
             blobs = self._dir / "blobs"
             blobs.mkdir(exist_ok=True, mode=0o700)
             blob_path = blobs / f"{seq}.bin"
