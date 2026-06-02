@@ -13,7 +13,7 @@ from pare_frida_mcp.android import java as java_mod
 from pare_frida_mcp.capture.search import search_capture as _search_capture
 from pare_frida_mcp.capture.read import read_capture as _read_capture
 from pare_frida_mcp.capture.store import CaptureStore
-from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE
+from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE, snapshot_key
 from pare_frida_mcp.ids import validate_session_id
 
 CFG = load_config()
@@ -80,6 +80,36 @@ async def attach(target: str = "", device_id: str = "") -> str:
         return _ok(f"attached pid {pid}", session_id=sid, pid=pid, name=name)
     except Exception as e:
         return _err("attach failed", e)
+
+
+async def enumerate_processes(device_id: str = "") -> str:
+    try:
+        d = devices_mod.get_device(device_id or None)
+        items = devices_mod.enumerate_processes(d)
+        key = snapshot_key("enumerate_processes", device=getattr(d, "id", "") or "")
+        n = SNAPSHOTS.replace(key, items, summary_field="name")
+        return _ok(f"{n} processes captured to @snapshots. Read with "
+                   f"search_capture(session_id='@snapshots', field='source', contains='{key}').",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
+    except Exception as e:
+        return _err("enumerate_processes failed", e)
+
+
+async def enumerate_applications(device_id: str = "") -> str:
+    try:
+        d = devices_mod.get_device(device_id or None)
+        if getattr(d, "type", None) == "local":
+            return _ok("application enumeration not supported on device type "
+                       "'local' - use enumerate_processes",
+                       store=SNAPSHOT_HANDLE, source=None, total=0)
+        items = devices_mod.enumerate_applications(d)
+        key = snapshot_key("enumerate_applications", device=getattr(d, "id", "") or "")
+        n = SNAPSHOTS.replace(key, items, summary_field="identifier")
+        return _ok(f"{n} applications captured to @snapshots. Read with "
+                   f"search_capture(session_id='@snapshots', field='source', contains='{key}').",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
+    except Exception as e:
+        return _err("enumerate_applications failed", e)
 
 
 async def enumerate_modules(session_id: str, filter: str = "") -> str:
