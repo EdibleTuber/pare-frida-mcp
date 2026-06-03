@@ -24,16 +24,31 @@ _CAP = CFG.max_tool_bytes
 
 def _ok(summary: str, **extra: Any) -> str:
     payload = {"summary": summary, **extra}
-    text, _ = bound_text(json.dumps(payload), _CAP)
-    return text
+    blob = json.dumps(payload)
+    if len(blob.encode("utf-8")) <= _CAP:
+        return blob
+    # Too large to inline. Return a VALID fallback envelope rather than a
+    # byte-truncated (invalid-JSON) string. Tools that pre-bound their output
+    # never reach here; this is the universal floor for those that don't.
+    short, _ = bound_text(summary, 512)
+    return json.dumps({
+        "summary": short,
+        "truncated": True,
+        "error": "result too large to inline; narrow the query or use "
+                 "search_capture/read_capture",
+    })
 
 
 def _err(summary: str, exc: BaseException | None = None) -> str:
     payload = {"summary": summary, "error": True}
     if exc is not None:
         payload["detail"] = f"{type(exc).__name__}: {exc}"
-    text, _ = bound_text(json.dumps(payload), _CAP)
-    return text
+    blob = json.dumps(payload)
+    if len(blob.encode("utf-8")) <= _CAP:
+        return blob
+    short, _ = bound_text(summary, 512)
+    detail, _ = bound_text(payload.get("detail", ""), _CAP // 2)
+    return json.dumps({"summary": short, "error": True, "detail": detail})
 
 
 def _resolve_store(handle: str) -> tuple[CaptureStore, Session | None]:
