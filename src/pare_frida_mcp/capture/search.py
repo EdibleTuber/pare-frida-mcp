@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from pare_frida_mcp.bounding import bound_text, fit_items
@@ -20,8 +19,8 @@ def _spread(seqs: list[int], limit: int) -> list[int]:
 
 def _lean(row: dict, byte_budget: int) -> tuple[dict, bool]:
     """Drop null/empty columns; clip oversized payload/summary string values so
-    no single row can blow the byte budget (keeps outer JSON valid). Returns
-    (lean_row, clipped)."""
+    an oversized field can't by itself dominate the budget (fit_items still
+    guarantees >=1 valid row). Returns (lean_row, clipped)."""
     out: dict[str, Any] = {}
     clipped = False
     for k, v in row.items():
