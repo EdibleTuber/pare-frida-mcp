@@ -210,18 +210,32 @@ async def write_memory(session_id: str, address: str, bytes: str) -> str:
 
 
 async def search_capture(session_id: str, field: str = "", contains: str = "",
-                         text: str = "", byte_budget: int = 0) -> str:
+                         text: str = "", byte_budget: int = 0,
+                         limit: int = 0, count_only: bool = False) -> str:
     try:
         store, s = _resolve_store(session_id)
         if s is not None:
             s.flush()  # ensure pending messages are persisted before searching
         budget = byte_budget or _CAP
-        res = _search_capture(
-            store,
-            field=field or None, contains=contains or None,
-            text=text or None, byte_budget=budget,
-        )
-        return _ok(f"{res['total']} matches", **res)
+        if count_only:
+            res = _search_capture(store, field=field or None, contains=contains or None,
+                                  text=text or None, count_only=True)
+            return _ok(f"{res['total']} matches (count only). Add text= terms to "
+                       f"narrow, or search again without count_only to sample.",
+                       total=res["total"], count_only=True)
+        res = _search_capture(store, field=field or None, contains=contains or None,
+                              text=text or None, limit=limit or 50, byte_budget=budget)
+        if not res["truncated"]:
+            summary = f"{res['total']} matches"
+        elif res["sampled"]:
+            summary = (f"{res['total']} matches - showing a {res['returned']}-row spread "
+                       f"sample. Narrow with a more specific text=, or "
+                       f"read_capture(seq=...) for one record.")
+        else:
+            summary = (f"{res['total']} matches - showing first {res['returned']} "
+                       f"(output capped). Narrow with a more specific text=, or "
+                       f"read_capture(seq=...) for one record.")
+        return _ok(summary, **res)
     except Exception as e:
         return _err("search_capture failed", e)
 
