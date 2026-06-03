@@ -64,10 +64,16 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("write_memory", "high", "Write bytes to target memory.",
              _in(session_id={"type": "string"}, address={"type": "string"},
                  bytes={"type": "string"})),
-    ToolSpec("search_capture", "low", "Search captured events for a session, or device snapshots via the reserved handle '@snapshots'.",
+    ToolSpec("search_capture", "low",
+             "Search captured events for a session, or device snapshots via the "
+             "reserved handle '@snapshots'. Returns lean, byte-bounded matches "
+             "and the true total. Use count_only=true to get just the count, "
+             "limit=N to peek at a spread sample of N rows, and a more specific "
+             "text= to narrow; read_capture(seq) for one full record.",
              _in(session_id={"type": "string"}, field={"type": "string"},
                  contains={"type": "string"}, text={"type": "string"},
-                 byte_budget={"type": "integer"})),
+                 byte_budget={"type": "integer"}, limit={"type": "integer"},
+                 count_only={"type": "boolean"})),
     ToolSpec("read_capture", "low", "Read a captured record slice for a session, or a device snapshot record via the reserved handle '@snapshots'.",
              _in(session_id={"type": "string"}, seq={"type": "integer"},
                  offset={"type": "integer"}, byte_budget={"type": "integer"})),
