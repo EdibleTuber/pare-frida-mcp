@@ -6,6 +6,8 @@ from pare_frida_mcp.bounding import bound_text, fit_items
 from pare_frida_mcp.capture.store import CaptureStore
 
 _ALLOWED_FIELDS = {"hook", "url", "method", "cls", "ret", "source", "type"}
+_ROW_RESERVE = 1024  # headroom for fit_items' reserve, the row's other fields,
+                     # and the _ok envelope, so a single clipped row stays valid.
 
 
 def _spread(seqs: list[int], limit: int) -> list[int]:
@@ -21,13 +23,14 @@ def _lean(row: dict, byte_budget: int) -> tuple[dict, bool]:
     """Drop null/empty columns; clip oversized payload/summary string values so
     an oversized field can't by itself dominate the budget (fit_items still
     guarantees >=1 valid row). Returns (lean_row, clipped)."""
+    clip_budget = max(0, byte_budget - _ROW_RESERVE)
     out: dict[str, Any] = {}
     clipped = False
     for k, v in row.items():
         if v in (None, ""):
             continue
         if k in ("payload", "summary") and isinstance(v, str):
-            v, was = bound_text(v, byte_budget)
+            v, was = bound_text(v, clip_budget)
             clipped = clipped or was
         out[k] = v
     return out, clipped
@@ -72,7 +75,7 @@ def search_capture(store: CaptureStore, *, field: str | None = None,
     chosen = _spread(seqs, limit) if sampled else seqs
     leaned = [_lean(r, byte_budget) for r in _fetch_rows(conn, chosen)]
     rows = [lr for lr, _ in leaned]
-    fitted, fully = fit_items(rows, byte_budget)
+    fitted, _ = fit_items(rows, byte_budget)
     returned = len(fitted)
     clipped_any = any(leaned[i][1] for i in range(returned))
     return {"total": total, "returned": returned,

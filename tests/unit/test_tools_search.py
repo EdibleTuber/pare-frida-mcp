@@ -49,3 +49,16 @@ async def test_search_exact_small_result_untruncated():
     assert res["total"] == 1
     assert res["truncated"] is False
     assert res["summary"] == "1 matches"
+
+
+@pytest.mark.asyncio
+async def test_search_single_oversized_payload_returns_clipped_row_not_fallback():
+    # One row whose payload is far bigger than the cap. The model should get the
+    # CLIPPED row back (valid JSON), not the generic "too large to inline" fallback.
+    T.SNAPSHOTS.replace("big", [{"data": "Q" * 9000}])
+    res = json.loads(await T.search_capture(SNAPSHOT_HANDLE, field="source",
+                                            contains="big"))
+    assert res["total"] == 1
+    assert res["returned"] == 1
+    assert "matches" in res, res            # NOT the generic _ok fallback envelope
+    assert res["matches"][0]["payload"]     # clipped payload present
