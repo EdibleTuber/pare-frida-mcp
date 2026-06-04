@@ -36,3 +36,25 @@ async def test_java_hook_install(system_server_pid):
         assert hook.get("hook"), hook
     finally:
         T.MANAGER.get(sid).frida_session.detach()
+
+
+@pytest.mark.asyncio
+async def test_enumerate_processes_on_emulator(usb_device):
+    res = json.loads(await T.enumerate_processes(device_id="emulator-5554"))
+    assert res["total"] >= 1, res
+    # Retrieve via a NARROW search (the intended persist-then-search usage). A
+    # broad source-key dump of the whole snapshot can exceed the tool byte cap;
+    # the model is expected to search for what it needs. 'zygote' is the Android
+    # app-process spawner and is present on every emulator image.
+    found = json.loads(await T.search_capture("@snapshots", text="zygote"))
+    assert found["total"] >= 1, found
+    assert any("zygote" in m["payload"] for m in found["matches"]), found
+
+
+@pytest.mark.asyncio
+async def test_enumerate_applications_on_emulator(usb_device):
+    res = json.loads(await T.enumerate_applications(device_id="emulator-5554"))
+    assert res["total"] >= 1, res
+    # The Android settings package is present on every emulator image.
+    found = json.loads(await T.search_capture("@snapshots", text="settings"))
+    assert found["total"] >= 1, found

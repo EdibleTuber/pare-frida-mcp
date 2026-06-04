@@ -32,9 +32,21 @@ TOOL_SPECS: list[ToolSpec] = [
              _in(device_id={"type": "string"})),
     ToolSpec("attach", "medium", "Attach to a process by pid or name.",
              _in(device_id={"type": "string"}, target={"type": "string"})),
-    ToolSpec("enumerate_modules", "low", "List loaded modules.",
+    ToolSpec("enumerate_processes", "low",
+             "List processes running on a device into the @snapshots store. "
+             "Device-scoped: needs no attach/session - pass device_id (or omit "
+             "for the sole USB device). Returns a source key; read results with "
+             "search_capture(session_id='@snapshots', field='source', contains=<key>).",
+             _in(device_id={"type": "string"})),
+    ToolSpec("enumerate_applications", "low",
+             "List installed apps/packages on a device into the @snapshots store. "
+             "Device-scoped: no attach needed. 'identifier' is the package name. "
+             "Returns a source key; read with search_capture(session_id='@snapshots', "
+             "field='source', contains=<key>).",
+             _in(device_id={"type": "string"})),
+    ToolSpec("enumerate_modules", "low", "List modules loaded in an ATTACHED process (requires session_id from attach).",
              _in(session_id={"type": "string"}, filter={"type": "string"})),
-    ToolSpec("enumerate_exports", "low", "List exports of a module.",
+    ToolSpec("enumerate_exports", "low", "List exports of a module in an ATTACHED process (requires session_id from attach).",
              _in(session_id={"type": "string"}, module={"type": "string"})),
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),
@@ -52,10 +64,16 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("write_memory", "high", "Write bytes to target memory.",
              _in(session_id={"type": "string"}, address={"type": "string"},
                  bytes={"type": "string"})),
-    ToolSpec("search_capture", "low", "Search captured events for a session, or device snapshots via the reserved handle '@snapshots'.",
+    ToolSpec("search_capture", "low",
+             "Search captured events for a session, or device snapshots via the "
+             "reserved handle '@snapshots'. Returns lean, byte-bounded matches "
+             "and the true total. Use count_only=true to get just the count, "
+             "limit=N to peek at a spread sample of N rows, and a more specific "
+             "text= to narrow; read_capture(seq) for one full record.",
              _in(session_id={"type": "string"}, field={"type": "string"},
                  contains={"type": "string"}, text={"type": "string"},
-                 byte_budget={"type": "integer"})),
+                 byte_budget={"type": "integer"}, limit={"type": "integer"},
+                 count_only={"type": "boolean"})),
     ToolSpec("read_capture", "low", "Read a captured record slice for a session, or a device snapshot record via the reserved handle '@snapshots'.",
              _in(session_id={"type": "string"}, seq={"type": "integer"},
                  offset={"type": "integer"}, byte_budget={"type": "integer"})),

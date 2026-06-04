@@ -13,7 +13,7 @@ from pare_frida_mcp.android import java as java_mod
 from pare_frida_mcp.capture.search import search_capture as _search_capture
 from pare_frida_mcp.capture.read import read_capture as _read_capture
 from pare_frida_mcp.capture.store import CaptureStore
-from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE
+from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE, snapshot_key
 from pare_frida_mcp.ids import validate_session_id
 
 CFG = load_config()
@@ -24,16 +24,31 @@ _CAP = CFG.max_tool_bytes
 
 def _ok(summary: str, **extra: Any) -> str:
     payload = {"summary": summary, **extra}
-    text, _ = bound_text(json.dumps(payload), _CAP)
-    return text
+    blob = json.dumps(payload)
+    if len(blob.encode("utf-8")) <= _CAP:
+        return blob
+    # Too large to inline. Return a VALID fallback envelope rather than a
+    # byte-truncated (invalid-JSON) string. Tools that pre-bound their output
+    # never reach here; this is the universal floor for those that don't.
+    short, _ = bound_text(summary, 512)
+    return json.dumps({
+        "summary": short,
+        "truncated": True,
+        "error": "result too large to inline; narrow the query or use "
+                 "search_capture/read_capture",
+    })
 
 
 def _err(summary: str, exc: BaseException | None = None) -> str:
     payload = {"summary": summary, "error": True}
     if exc is not None:
         payload["detail"] = f"{type(exc).__name__}: {exc}"
-    text, _ = bound_text(json.dumps(payload), _CAP)
-    return text
+    blob = json.dumps(payload)
+    if len(blob.encode("utf-8")) <= _CAP:
+        return blob
+    short, _ = bound_text(summary, 512)
+    detail, _ = bound_text(payload.get("detail", ""), _CAP // 2)
+    return json.dumps({"summary": short, "error": True, "detail": detail})
 
 
 def _resolve_store(handle: str) -> tuple[CaptureStore, Session | None]:
@@ -80,6 +95,36 @@ async def attach(target: str = "", device_id: str = "") -> str:
         return _ok(f"attached pid {pid}", session_id=sid, pid=pid, name=name)
     except Exception as e:
         return _err("attach failed", e)
+
+
+async def enumerate_processes(device_id: str = "") -> str:
+    try:
+        d = devices_mod.get_device(device_id or None)
+        items = devices_mod.enumerate_processes(d)
+        key = snapshot_key("enumerate_processes", device=getattr(d, "id", "") or "")
+        n = SNAPSHOTS.replace(key, items, summary_field="name")
+        return _ok(f"{n} processes captured to @snapshots. Read with "
+                   f"search_capture(session_id='@snapshots', field='source', contains='{key}').",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
+    except Exception as e:
+        return _err("enumerate_processes failed", e)
+
+
+async def enumerate_applications(device_id: str = "") -> str:
+    try:
+        d = devices_mod.get_device(device_id or None)
+        if getattr(d, "type", None) == "local":
+            return _ok("application enumeration not supported on device type "
+                       "'local' - use enumerate_processes",
+                       store=SNAPSHOT_HANDLE, source=None, total=0)
+        items = devices_mod.enumerate_applications(d)
+        key = snapshot_key("enumerate_applications", device=getattr(d, "id", "") or "")
+        n = SNAPSHOTS.replace(key, items, summary_field="identifier")
+        return _ok(f"{n} applications captured to @snapshots. Read with "
+                   f"search_capture(session_id='@snapshots', field='source', contains='{key}').",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
+    except Exception as e:
+        return _err("enumerate_applications failed", e)
 
 
 async def enumerate_modules(session_id: str, filter: str = "") -> str:
@@ -180,18 +225,32 @@ async def write_memory(session_id: str, address: str, bytes: str) -> str:
 
 
 async def search_capture(session_id: str, field: str = "", contains: str = "",
-                         text: str = "", byte_budget: int = 0) -> str:
+                         text: str = "", byte_budget: int = 0,
+                         limit: int = 0, count_only: bool = False) -> str:
     try:
         store, s = _resolve_store(session_id)
         if s is not None:
             s.flush()  # ensure pending messages are persisted before searching
         budget = byte_budget or _CAP
-        res = _search_capture(
-            store,
-            field=field or None, contains=contains or None,
-            text=text or None, byte_budget=budget,
-        )
-        return _ok(f"{res['total']} matches", **res)
+        if count_only:
+            res = _search_capture(store, field=field or None, contains=contains or None,
+                                  text=text or None, count_only=True)
+            return _ok(f"{res['total']} matches (count only). Add text= terms to "
+                       f"narrow, or search again without count_only to sample.",
+                       total=res["total"], count_only=True)
+        res = _search_capture(store, field=field or None, contains=contains or None,
+                              text=text or None, limit=limit or 50, byte_budget=budget)
+        if not res["truncated"]:
+            summary = f"{res['total']} matches"
+        elif res["sampled"]:
+            summary = (f"{res['total']} matches - showing a {res['returned']}-row spread "
+                       f"sample. Narrow with a more specific text=, or "
+                       f"read_capture(seq=...) for one record.")
+        else:
+            summary = (f"{res['total']} matches - showing first {res['returned']} "
+                       f"(output capped). Narrow with a more specific text=, or "
+                       f"read_capture(seq=...) for one record.")
+        return _ok(summary, **res)
     except Exception as e:
         return _err("search_capture failed", e)
 

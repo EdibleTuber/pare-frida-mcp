@@ -15,30 +15,21 @@ def bound_text(text: str, max_bytes: int) -> tuple[str, bool]:
     return text_out, True
 
 
-def page_items(items, offset=0, limit=0, byte_budget=4096, reserve=512):
-    """Return (page, next_offset, truncated).
-
-    Appends items starting at `offset` until adding another would push the
-    serialized list past (byte_budget - reserve), or until `limit` items are
-    collected (when limit > 0). Truncation happens at the item level so the
-    surrounding JSON is always structurally valid. `reserve` leaves headroom
-    for the response envelope (summary/total/offset/... keys). At least one
-    item per page is emitted so pagination always makes forward progress.
-    next_offset is the index to resume from, or None when nothing remains.
+def fit_items(items, byte_budget=4096, reserve=512):
+    """Return (fitted, fully_fit). Append whole items until adding another
+    would push the serialized list past (byte_budget - reserve). `reserve`
+    leaves headroom for the response envelope (summary/total/... keys).
+    Truncation is at the item level, so the surrounding JSON is always valid.
+    At least one item is returned when any exist, to guarantee forward
+    progress/visibility. fully_fit is True iff every item fit.
     """
-    start = max(0, offset)
     budget = max(0, byte_budget - reserve)
-    page = []
+    fitted = []
     size = 2  # the enclosing [] of the list
-    for item in items[start:]:
-        if limit and len(page) >= limit:
-            break
+    for item in items:
         item_bytes = len(json.dumps(item).encode("utf-8")) + 1  # +1 for the comma
-        if page and size + item_bytes > budget:
+        if fitted and size + item_bytes > budget:
             break
-        page.append(item)
+        fitted.append(item)
         size += item_bytes
-    consumed = start + len(page)
-    truncated = consumed < len(items)
-    next_offset = consumed if truncated else None
-    return page, next_offset, truncated
+    return fitted, len(fitted) == len(items)
