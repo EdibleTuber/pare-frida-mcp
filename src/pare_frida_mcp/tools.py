@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pare_frida_mcp.bounding import bound_text
+from pare_frida_mcp.bounding import bound_text, fit_items
 from pare_frida_mcp.config import load_config
 from pare_frida_mcp.core.sessions import Session, SessionManager
 from pare_frida_mcp.core import devices as devices_mod
@@ -132,7 +132,10 @@ async def enumerate_modules(session_id: str, filter: str = "") -> str:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
         mods = memory_mod.enumerate_modules(s.script, filter or None)
-        return _ok(f"{len(mods)} modules", modules=mods[:200])
+        shown, fully = fit_items(mods, _CAP)
+        note = "" if fully else f" (showing {len(shown)}; narrow with filter=)"
+        return _ok(f"{len(mods)} modules{note}",
+                   modules=shown, total=len(mods), truncated=not fully)
     except Exception as e:
         return _err("enumerate_modules failed", e)
 
@@ -142,7 +145,10 @@ async def enumerate_exports(session_id: str, module: str) -> str:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
         exps = memory_mod.enumerate_exports(s.script, module)
-        return _ok(f"{len(exps)} exports for {module}", exports=exps[:200])
+        shown, fully = fit_items(exps, _CAP)
+        note = "" if fully else f" (showing {len(shown)} of {len(exps)})"
+        return _ok(f"{len(exps)} exports for {module}{note}",
+                   exports=shown, total=len(exps), truncated=not fully)
     except Exception as e:
         return _err("enumerate_exports failed", e)
 
@@ -166,7 +172,11 @@ async def execute_script(session_id: str, source: str) -> str:
         # If the value fits the cap, return it inline; otherwise spill the full
         # result into the capture store and hand back a capture handle so the
         # agent can retrieve it via read_capture.
-        full = json.dumps({"value": value})
+        # Probe the actual inline envelope shape (_ok adds a summary key), so the
+        # spill decision matches what _ok will emit. Measuring a smaller shape
+        # would let a value that fits {"value": ...} but not the _ok envelope slip
+        # through and be dropped by _ok's oversized fallback.
+        full = json.dumps({"summary": "eval complete", "result": value})
         _, truncated = bound_text(full, _CAP)
         if not truncated:
             return _ok("eval complete", result=value)
@@ -231,7 +241,10 @@ async def search_capture(session_id: str, field: str = "", contains: str = "",
         store, s = _resolve_store(session_id)
         if s is not None:
             s.flush()  # ensure pending messages are persisted before searching
-        budget = byte_budget or _CAP
+        # Clamp to _CAP: a caller-supplied budget above the cap would let the
+        # engine fill past what _ok can emit, tripping _ok's fallback and
+        # dropping every match instead of returning a bounded page.
+        budget = min(byte_budget or _CAP, _CAP)
         if count_only:
             res = _search_capture(store, field=field or None, contains=contains or None,
                                   text=text or None, count_only=True)
@@ -260,7 +273,10 @@ async def read_capture(session_id: str, seq: int, offset: int = 0, byte_budget: 
         store, s = _resolve_store(session_id)
         if s is not None:
             s.flush()
-        budget = byte_budget or _CAP
+        # Clamp to _CAP, then reserve headroom for the _ok envelope so the
+        # wrapped {summary, seq, offset, truncated, next_offset, text} payload
+        # stays under the cap and never trips _ok's data-dropping fallback.
+        budget = max(1, min(byte_budget or _CAP, _CAP) - 512)
         res = _read_capture(store, seq=seq, offset=offset, byte_budget=budget)
         return _ok(f"seq {seq}", **res)
     except Exception as e:
