@@ -68,3 +68,13 @@ def test_re_replace_promotes_key_to_mru():
     assert search_capture(snaps.store, text="one2")["total"] == 1   # k1 survived
     assert search_capture(snaps.store, text="two")["total"] == 0    # k2 evicted
     assert search_capture(snaps.store, text="three")["total"] == 1
+
+
+def test_latest_source_is_most_recently_replaced():
+    s = SnapshotStore()
+    assert s.latest_source() is None          # empty store
+    s.replace("alpha", [{"name": "a"}])
+    s.replace("beta", [{"name": "b"}])
+    assert s.latest_source() == "beta"        # MRU, not seq order
+    s.replace("alpha", [{"name": "a2"}])      # touch alpha -> now MRU
+    assert s.latest_source() == "alpha"
