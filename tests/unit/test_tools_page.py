@@ -37,3 +37,12 @@ async def test_page_capture_empty_store_is_graceful(monkeypatch):
     monkeypatch.setattr(T, "SNAPSHOTS", type(T.SNAPSHOTS)())   # fresh empty store
     out = json.loads(await T.page_capture("@snapshots"))
     assert out.get("total", 0) == 0 or "sources" in out
+
+
+@pytest.mark.asyncio
+async def test_enumerate_summary_advertises_snapshot(monkeypatch):
+    from pare_frida_mcp.core import devices as devices_mod
+    monkeypatch.setattr(devices_mod, "get_device", lambda _id=None: type("D", (), {"id": "emu", "type": "usb"})())
+    monkeypatch.setattr(devices_mod, "enumerate_processes", lambda d: [{"pid": 1, "name": "init"}])
+    out = json.loads(await T.enumerate_processes("emu"))
+    assert "/snapshot" in out["summary"]

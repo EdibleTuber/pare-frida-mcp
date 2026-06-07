@@ -107,8 +107,8 @@ async def enumerate_processes(device_id: str = "") -> str:
         items = devices_mod.enumerate_processes(d)
         key = snapshot_key("enumerate_processes", device=getattr(d, "id", "") or "")
         n = SNAPSHOTS.replace(key, items, summary_field="name")
-        return _ok(f"{n} processes captured to @snapshots. Read with "
-                   f"search_capture(session_id='@snapshots', field='source', contains='{key}').",
+        return _ok(f"{n} processes captured to @snapshots. Run /snapshot to view all, "
+                   f"or search_capture(session_id='@snapshots', field='source', contains='{key}').",
                    store=SNAPSHOT_HANDLE, source=key, total=n)
     except Exception as e:
         return _err("enumerate_processes failed", e)
@@ -124,8 +124,8 @@ async def enumerate_applications(device_id: str = "") -> str:
         items = devices_mod.enumerate_applications(d)
         key = snapshot_key("enumerate_applications", device=getattr(d, "id", "") or "")
         n = SNAPSHOTS.replace(key, items, summary_field="identifier")
-        return _ok(f"{n} applications captured to @snapshots. Read with "
-                   f"search_capture(session_id='@snapshots', field='source', contains='{key}').",
+        return _ok(f"{n} applications captured to @snapshots. Run /snapshot to view all, "
+                   f"or search_capture(session_id='@snapshots', field='source', contains='{key}').",
                    store=SNAPSHOT_HANDLE, source=key, total=n)
     except Exception as e:
         return _err("enumerate_applications failed", e)
