@@ -14,6 +14,11 @@ def test_execute_script_is_critical_and_write_memory_high():
     assert by_name["execute_script"].risk_tier == "critical"
     assert by_name["write_memory"].risk_tier == "high"
 
+def test_read_memory_and_java_hook_are_high():
+    by_name = {s.name: s for s in TOOL_SPECS}
+    assert by_name["read_memory"].risk_tier == "high"
+    assert by_name["java_hook"].risk_tier == "high"
+
 def test_adapter_matches_agent_core_shape():
     adapter = WorkerContractAdapter()
     assert isinstance(adapter.contract_version(), int)
