@@ -12,6 +12,7 @@ from pare_frida_mcp.core import memory as memory_mod
 from pare_frida_mcp.android import java as java_mod
 from pare_frida_mcp.capture.search import search_capture as _search_capture
 from pare_frida_mcp.capture.read import read_capture as _read_capture
+from pare_frida_mcp.capture.page import page_rows as _page_rows, list_sources as _list_sources
 from pare_frida_mcp.capture.store import CaptureStore
 from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE, snapshot_key
 from pare_frida_mcp.ids import validate_session_id
@@ -20,6 +21,9 @@ CFG = load_config()
 MANAGER = SessionManager(CFG)
 SNAPSHOTS = SnapshotStore()
 _CAP = CFG.max_tool_bytes
+# page_capture is consumed by the /snapshot command, NOT model context, so it
+# is exempt from the 4096-byte model cap. Bound to a generous budget instead.
+_PAGE_BUDGET = 262144
 
 
 def _ok(summary: str, **extra: Any) -> str:
@@ -281,3 +285,27 @@ async def read_capture(session_id: str, seq: int, offset: int = 0, byte_budget: 
         return _ok(f"seq {seq}", **res)
     except Exception as e:
         return _err("read_capture failed", e)
+
+
+async def page_capture(session_id: str, source: str = "", field: str = "",
+                       contains: str = "", list_sources: bool = False) -> str:
+    try:
+        store, _ = _resolve_store(session_id)
+        if list_sources:
+            srcs = _list_sources(store)
+            return json.dumps({"summary": f"{len(srcs)} snapshots",
+                               "store": session_id, "sources": srcs})
+        # Latest resolution is @snapshots-specific (MRU); v0 only uses @snapshots.
+        src = source or (SNAPSHOTS.latest_source() if session_id == SNAPSHOT_HANDLE else "")
+        if not src:
+            return json.dumps({"summary": "no snapshots captured yet",
+                               "store": session_id, "sources": []})
+        res = _page_rows(store, source=src, field=field or None,
+                         contains=contains or None, byte_budget=_PAGE_BUDGET)
+        summary = f"{res['shown']} of {res['total']} rows for {src}"
+        # Direct json.dumps (NOT _ok): intentionally bypasses the model cap.
+        return json.dumps({"summary": summary, "store": session_id, "source": src,
+                           "rows": res["rows"], "total": res["total"],
+                           "shown": res["shown"]})
+    except Exception as e:
+        return _err("page_capture failed", e)
