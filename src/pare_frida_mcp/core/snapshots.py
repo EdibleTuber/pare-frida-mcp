@@ -51,3 +51,14 @@ class SnapshotStore:
             old, _ = self._keys.popitem(last=False)
             self.store.delete_by_source(old)
         return len(items)
+
+    def latest_source(self) -> str | None:
+        """The most-recently-replaced source key (MRU), or None if empty.
+
+        Uses the LRU OrderedDict (insertion/touch order) rather than MAX(seq):
+        seq is a reused SQLite rowid, so a replaced source can take lower seqs
+        and 'highest seq' would point at the wrong snapshot.
+        """
+        if not self._keys:
+            return None
+        return next(reversed(self._keys))

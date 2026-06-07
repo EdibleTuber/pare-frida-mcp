@@ -77,6 +77,16 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("read_capture", "low", "Read a captured record slice for a session, or a device snapshot record via the reserved handle '@snapshots'.",
              _in(session_id={"type": "string"}, seq={"type": "integer"},
                  offset={"type": "integer"}, byte_budget={"type": "integer"})),
+    ToolSpec("page_capture", "low",
+             "Read ALL rows of a snapshot from a capture store (COMPLETE, not "
+             "sampled) for human display via the /snapshot command. "
+             "session_id='@snapshots'; omit source for the latest snapshot, or "
+             "pass source=<key> with field='summary', contains=<substring> to "
+             "filter; list_sources=true returns the catalog. Models should use "
+             "search_capture instead (this returns unbounded output).",
+             _in(session_id={"type": "string"}, source={"type": "string"},
+                 field={"type": "string"}, contains={"type": "string"},
+                 list_sources={"type": "boolean"})),
 ]
 
 
