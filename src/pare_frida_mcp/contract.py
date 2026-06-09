@@ -32,6 +32,12 @@ TOOL_SPECS: list[ToolSpec] = [
              _in(device_id={"type": "string"})),
     ToolSpec("attach", "medium", "Attach to a process by pid or name.",
              _in(device_id={"type": "string"}, target={"type": "string"})),
+    ToolSpec("list_sessions", "low",
+             "List live attach sessions with a real liveness probe. Returns "
+             "session_id, pid, name, and live (bool) per session. Call this at "
+             "the start of any turn that will act on a session - never assume a "
+             "session_id from earlier in the conversation is still attached.",
+             dict(_OBJ)),
     ToolSpec("enumerate_processes", "low",
              "List processes running on a device into the @snapshots store. "
              "Device-scoped: needs no attach/session - pass device_id (or omit "

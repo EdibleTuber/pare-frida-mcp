@@ -101,6 +101,14 @@ async def attach(target: str = "", device_id: str = "") -> str:
         return _err("attach failed", e)
 
 
+async def list_sessions() -> str:
+    try:
+        rows = MANAGER.list_sessions()
+        return _ok(f"{len(rows)} sessions", sessions=rows)
+    except Exception as e:
+        return _err("list_sessions failed", e)
+
+
 async def enumerate_processes(device_id: str = "") -> str:
     try:
         d = devices_mod.get_device(device_id or None)

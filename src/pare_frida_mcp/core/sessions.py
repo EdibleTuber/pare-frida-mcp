@@ -49,6 +49,22 @@ class SessionManager:
     def get(self, session_id: str) -> Session:
         return self._sessions[session_id]
 
+    def list_sessions(self) -> list[dict]:
+        """Snapshot of live sessions with a real per-session liveness probe.
+
+        Liveness reads frida.Session.is_detached - a cheap property, no RPC to
+        the target. A missing frida_session, or a session object lacking
+        is_detached, is treated as NOT live: we must never report a dead
+        session as alive.
+        """
+        rows = []
+        for s in self._sessions.values():
+            fs = s.frida_session
+            detached = True if fs is None else bool(getattr(fs, "is_detached", True))
+            rows.append({"session_id": s.id, "pid": s.pid,
+                         "name": s.name, "live": not detached})
+        return rows
+
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()
 
