@@ -109,6 +109,17 @@ async def list_sessions() -> str:
         return _err("list_sessions failed", e)
 
 
+async def detach(session_id: str) -> str:
+    try:
+        sid = validate_session_id(session_id)
+        MANAGER.detach(sid)
+        return _ok(f"detached {sid}", session_id=sid)
+    except KeyError:
+        return _err(f"no such session {session_id!r}")
+    except Exception as e:
+        return _err("detach failed", e)
+
+
 async def enumerate_processes(device_id: str = "") -> str:
     try:
         d = devices_mod.get_device(device_id or None)

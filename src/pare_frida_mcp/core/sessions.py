@@ -65,6 +65,23 @@ class SessionManager:
                          "name": s.name, "live": not detached})
         return rows
 
+    def detach(self, session_id: str) -> None:
+        """Detach the live session and tear down its capture store.
+
+        Raises KeyError if session_id is unknown. If the underlying
+        frida.Session is already dead (USB drop), the detach() call may throw -
+        we swallow it and tear down our own state regardless.
+        """
+        s = self._sessions.pop(session_id)  # KeyError if absent - handler maps to _err
+        fs = s.frida_session
+        if fs is not None:
+            try:
+                fs.detach()
+            except Exception:
+                pass
+        s.flush()
+        s.store.close()
+
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()
 
