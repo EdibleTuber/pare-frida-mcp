@@ -27,3 +27,14 @@ def _fresh_snapshots():
 
     tools_mod.SNAPSHOTS = SnapshotStore()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _fresh_manager():
+    """Rebind the process-global SessionManager to a clean instance per test so
+    sessions injected by one test can't leak into another."""
+    import pare_frida_mcp.tools as tools_mod
+    from pare_frida_mcp.core.sessions import SessionManager
+
+    tools_mod.MANAGER = SessionManager(tools_mod.CFG)
+    yield

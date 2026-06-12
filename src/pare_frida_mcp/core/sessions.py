@@ -49,6 +49,39 @@ class SessionManager:
     def get(self, session_id: str) -> Session:
         return self._sessions[session_id]
 
+    def list_sessions(self) -> list[dict]:
+        """Snapshot of live sessions with a real per-session liveness probe.
+
+        Liveness reads frida.Session.is_detached - a cheap property, no RPC to
+        the target. A missing frida_session, or a session object lacking
+        is_detached, is treated as NOT live: we must never report a dead
+        session as alive.
+        """
+        rows = []
+        for s in self._sessions.values():
+            fs = s.frida_session
+            detached = True if fs is None else bool(getattr(fs, "is_detached", True))
+            rows.append({"session_id": s.id, "pid": s.pid,
+                         "name": s.name, "live": not detached})
+        return rows
+
+    def detach(self, session_id: str) -> None:
+        """Detach the live session and tear down its capture store.
+
+        Raises KeyError if session_id is unknown. If the underlying
+        frida.Session is already dead (USB drop), the detach() call may throw -
+        we swallow it and tear down our own state regardless.
+        """
+        s = self._sessions.pop(session_id)  # KeyError if absent - handler maps to _err
+        fs = s.frida_session
+        if fs is not None:
+            try:
+                fs.detach()
+            except Exception:
+                pass
+        s.flush()
+        s.store.close()
+
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()
 
