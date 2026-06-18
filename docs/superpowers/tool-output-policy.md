@@ -52,11 +52,12 @@ consumers inherit it for free.
 | `enumerate_processes` / `enumerate_applications` | snapshot | `@snapshots` ✓ | done |
 | `execute_script` output | stream | session store ✓ | done |
 | hook events (`java_hook`) | stream | session store ✓ | done |
-| `enumerate_modules` / `enumerate_exports` | snapshot-shaped state view | **inline (large lists)** | **convert to store consumers** (next effort) |
+| `enumerate_modules` / `enumerate_exports` | snapshot | `@snapshots` ✓ | done |
 | `list_devices` | snapshot | inline (always tiny) | leave inline (YAGNI) |
 | `attach`, `select_device`, `write_memory`, `java_hook(_remove)`, `load_script` | control | inline ✓ | leave inline |
 
-The standout gap is `enumerate_modules` / `enumerate_exports`: snapshot-shaped but
-still dumping large lists inline (the source of the `test_attach_enumerate_read`
-corruption). Converting them is the next persist-then-search effort; until then
-the `_ok` floor keeps their output valid.
+`enumerate_modules` / `enumerate_exports` are now `@snapshots` consumers like
+`enumerate_processes` / `applications`: session-scoped keys, full list persisted
+uncapped, handle-only return. The operator reads the complete list with
+`/snapshot`; the model narrows with a `text=` search. Snapshots are a bounded
+LRU cache (re-enumerate to refresh), and `detach` purges a session's snapshots.
