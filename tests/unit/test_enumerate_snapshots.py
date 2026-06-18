@@ -85,3 +85,17 @@ async def test_enumerate_modules_handle_only(monkeypatch):
     got = json.loads(await T.search_capture("@snapshots", field="source",
                                             contains=key, count_only=True))
     assert got["total"] == 300, got
+
+
+@pytest.mark.asyncio
+async def test_enumerate_exports_handle_only(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_exports",
+                        lambda script, module: [{"name": f"sym{i}", "address": hex(i)}
+                                                for i in range(120)])
+    res = json.loads(await T.enumerate_exports(sid, module="libc.so"))
+    assert res["store"] == "@snapshots", res
+    assert res["total"] == 120, res
+    assert "exports" not in res, res
+    assert res["source"] == snapshot_key("enumerate_exports", session=sid, module="libc.so")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pare_frida_mcp.bounding import bound_text, fit_items
+from pare_frida_mcp.bounding import bound_text
 from pare_frida_mcp.config import load_config
 from pare_frida_mcp.core.sessions import Session, SessionManager
 from pare_frida_mcp.core import devices as devices_mod
@@ -173,11 +173,16 @@ async def enumerate_exports(session_id: str, module: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
+        # module= is part of the key so each module's exports get their own
+        # snapshot; session= scopes it to this attached process.
+        key = snapshot_key("enumerate_exports", session=sid, module=module)
         exps = memory_mod.enumerate_exports(s.script, module)
-        shown, fully = fit_items(exps, _CAP)
-        note = "" if fully else f" (showing {len(shown)} of {len(exps)})"
-        return _ok(f"{len(exps)} exports for {module}{note}",
-                   exports=shown, total=len(exps), truncated=not fully)
+        n = SNAPSHOTS.replace(key, exps, summary_field="name")
+        return _ok(f"{n} exports for {module} captured to @snapshots. Run "
+                   f"/snapshot to view the full list, or "
+                   f"search_capture(session_id='@snapshots', text='<symbol>') "
+                   f"to find specific entries.",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
     except Exception as e:
         return _err("enumerate_exports failed", e)
 

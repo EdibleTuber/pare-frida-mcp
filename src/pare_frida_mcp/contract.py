@@ -60,7 +60,11 @@ TOOL_SPECS: list[ToolSpec] = [
              "view the full list with /snapshot, or narrow with "
              "search_capture(session_id='@snapshots', text=<lib-or-symbol>).",
              _in(session_id={"type": "string"})),
-    ToolSpec("enumerate_exports", "low", "List exports of a module in an ATTACHED process (requires session_id from attach).",
+    ToolSpec("enumerate_exports", "low",
+             "List a module's exports in an ATTACHED process into the "
+             "@snapshots store (requires session_id from attach). Returns a "
+             "source key; view with /snapshot or narrow with "
+             "search_capture(session_id='@snapshots', text=<symbol>).",
              _in(session_id={"type": "string"}, module={"type": "string"})),
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),
