@@ -119,3 +119,71 @@ async def test_detach_purges_session_snapshots():
     survives = json.loads(await T.search_capture("@snapshots", field="source",
                                                  contains=other, count_only=True))
     assert survives["total"] == 1, survives
+
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_no_live_session_errors():
+    sid = new_session_id()  # well-formed but never registered
+    res = json.loads(await T.enumerate_modules(sid))
+    assert res.get("error") is True, res
+    assert "source" not in res, res
+
+
+@pytest.mark.asyncio
+async def test_enumerate_exports_no_live_session_errors():
+    sid = new_session_id()
+    res = json.loads(await T.enumerate_exports(sid, module="libc.so"))
+    assert res.get("error") is True, res
+
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_empty_list(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_modules", lambda script: [])
+    res = json.loads(await T.enumerate_modules(sid))
+    assert res.get("error") is not True, res
+    assert res["total"] == 0, res
+    assert res["source"]
+
+
+@pytest.mark.asyncio
+async def test_reenumerate_refreshes_same_key(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_modules",
+                        lambda script: [{"name": "a.so"}, {"name": "b.so"}])
+    r1 = json.loads(await T.enumerate_modules(sid))
+    monkeypatch.setattr(memory_mod, "enumerate_modules",
+                        lambda script: [{"name": "c.so"}])
+    r2 = json.loads(await T.enumerate_modules(sid))
+    assert r1["source"] == r2["source"], (r1, r2)   # same session-scoped key
+    assert r2["total"] == 1
+    got = json.loads(await T.search_capture("@snapshots", field="source",
+                                            contains=r2["source"]))
+    names = {json.loads(m["payload"])["name"] for m in got["matches"]}
+    assert names == {"c.so"}, got                    # only new rows; old replaced
+
+
+@pytest.mark.asyncio
+async def test_exports_distinct_module_keys_coexist(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_exports",
+                        lambda script, module: [{"name": module + ":f"}])
+    ra = json.loads(await T.enumerate_exports(sid, module="liba.so"))
+    rb = json.loads(await T.enumerate_exports(sid, module="libb.so"))
+    assert ra["source"] != rb["source"]
+    ga = json.loads(await T.search_capture("@snapshots", field="source",
+                                           contains=ra["source"], count_only=True))
+    gb = json.loads(await T.search_capture("@snapshots", field="source",
+                                           contains=rb["source"], count_only=True))
+    assert ga["total"] == 1 and gb["total"] == 1, (ga, gb)
+
+
+def test_filter_removed_from_schema():
+    from pare_frida_mcp.contract import TOOL_SPECS
+    mods = next(s for s in TOOL_SPECS if s.name == "enumerate_modules")
+    assert "filter" not in mods.input_schema["properties"], mods.input_schema
+    exps = next(s for s in TOOL_SPECS if s.name == "enumerate_exports")
+    assert "module" in exps.input_schema["properties"], exps.input_schema
