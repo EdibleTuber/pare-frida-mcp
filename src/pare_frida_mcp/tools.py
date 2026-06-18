@@ -150,15 +150,21 @@ async def enumerate_applications(device_id: str = "") -> str:
         return _err("enumerate_applications failed", e)
 
 
-async def enumerate_modules(session_id: str, filter: str = "") -> str:
+async def enumerate_modules(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        mods = memory_mod.enumerate_modules(s.script, filter or None)
-        shown, fully = fit_items(mods, _CAP)
-        note = "" if fully else f" (showing {len(shown)}; narrow with filter=)"
-        return _ok(f"{len(mods)} modules{note}",
-                   modules=shown, total=len(mods), truncated=not fully)
+        # Session-scoped key: modules are meaningful only relative to THIS
+        # attached process, so the key must not collide across sessions.
+        key = snapshot_key("enumerate_modules", session=sid)
+        # Persist the FULL list uncapped (persist-then-search); return only a
+        # handle. /snapshot shows all; a text= search narrows. No fit_items.
+        mods = memory_mod.enumerate_modules(s.script)
+        n = SNAPSHOTS.replace(key, mods, summary_field="name")
+        return _ok(f"{n} modules captured to @snapshots. Run /snapshot to view "
+                   f"the full list, or search_capture(session_id='@snapshots', "
+                   f"text='<lib-or-symbol>') to find specific entries.",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
     except Exception as e:
         return _err("enumerate_modules failed", e)
 

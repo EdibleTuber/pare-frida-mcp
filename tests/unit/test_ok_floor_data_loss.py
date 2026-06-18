@@ -22,23 +22,7 @@ class _DummySession:
         self.store = CaptureStore.open_memory()
 
 
-# --- Fix 1: enumerate_modules/exports must return a bounded list, not empty fallback ---
-
-@pytest.mark.asyncio
-async def test_enumerate_modules_returns_bounded_list_not_empty_fallback(monkeypatch):
-    sid = new_session_id()
-    T.MANAGER._sessions[sid] = _DummySession()
-    monkeypatch.setattr(memory_mod, "enumerate_modules",
-                        lambda script, filt: [{"name": "m" * 60, "base": hex(i)} for i in range(300)])
-    try:
-        res = json.loads(await T.enumerate_modules(sid))
-        assert "modules" in res, res            # NOT the generic _ok fallback
-        assert 0 < len(res["modules"]) < 300     # bounded to the cap
-        assert res["total"] == 300
-        assert res["truncated"] is True
-    finally:
-        T.MANAGER._sessions.pop(sid, None)
-
+# --- Fix 1: enumerate_exports must return a bounded list, not empty fallback ---
 
 @pytest.mark.asyncio
 async def test_enumerate_exports_returns_bounded_list_not_empty_fallback(monkeypatch):

@@ -67,3 +67,21 @@ def test_delete_sessions_no_prefix_collision():
     removed = store.delete_sessions("s1")
     assert removed == 1                 # only s1, NOT s10
     assert store.latest_source() == s10
+
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_handle_only(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_modules",
+                        lambda script: [{"name": f"lib{i}.so", "base": hex(i), "size": i}
+                                        for i in range(300)])
+    res = json.loads(await T.enumerate_modules(sid))
+    assert res["store"] == "@snapshots", res
+    assert res["total"] == 300, res
+    assert "modules" not in res, res                 # handle-only, no inline list
+    key = res["source"]
+    assert key == snapshot_key("enumerate_modules", session=sid)
+    got = json.loads(await T.search_capture("@snapshots", field="source",
+                                            contains=key, count_only=True))
+    assert got["total"] == 300, got
