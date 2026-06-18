@@ -32,3 +32,27 @@ async def test_source_contains_escapes_like_metachars():
         contains="enumerate_exports:module=lib_x:session=s1"))
     assert res["total"] == 1, res
     assert all("lib_x" in m["source"] for m in res["matches"]), res
+
+
+from pare_frida_mcp.core.snapshots import SnapshotStore
+
+
+def test_delete_sessions_purges_only_that_session():
+    store = SnapshotStore()
+    a = snapshot_key("enumerate_modules", session="sid-a")
+    a_exp = snapshot_key("enumerate_exports", session="sid-a", module="libc.so")
+    b = snapshot_key("enumerate_modules", session="sid-b")
+    store.replace(a, [{"name": "libc.so"}])
+    store.replace(a_exp, [{"name": "open"}])
+    store.replace(b, [{"name": "libm.so"}])
+
+    removed = store.delete_sessions("sid-a")
+
+    assert removed == 2                      # a and a_exp, not b
+    assert store.latest_source() == b        # only sid-b's key remains tracked
+
+    def _count(source):
+        return store.store._conn.execute(
+            "SELECT count(*) c FROM messages WHERE source=?", (source,)).fetchone()["c"]
+    assert _count(a) == 0 and _count(a_exp) == 0   # sid-a purged
+    assert _count(b) == 1                            # sid-b survives
