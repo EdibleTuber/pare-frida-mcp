@@ -16,10 +16,16 @@ async def test_attach_enumerate_read(system_server_pid):
     assert "session_id" in res, res
     sid = res["session_id"]
     try:
-        mods = json.loads(await T.enumerate_modules(sid, filter="libc"))
-        assert mods.get("modules"), mods
-        libc = next((m for m in mods["modules"] if "libc" in m["name"]), None)
-        assert libc is not None
+        mods = json.loads(await T.enumerate_modules(sid))
+        assert mods["store"] == "@snapshots", mods
+        assert mods["total"] > 50, mods            # full list persisted, uncapped
+        # Recover libc's base from the snapshot via a NARROW search (the
+        # intended persist-then-search usage), then read its memory.
+        found = json.loads(await T.search_capture("@snapshots", text="libc"))
+        assert found["total"] >= 1, found
+        libc = next((p for p in (json.loads(m["payload"]) for m in found["matches"])
+                     if "libc" in p["name"]), None)
+        assert libc is not None, found
         mem = json.loads(await T.read_memory(sid, address=libc["base"], size=16))
         assert mem.get("hex_preview"), mem
     finally:

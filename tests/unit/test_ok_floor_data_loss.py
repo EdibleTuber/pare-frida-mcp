@@ -8,7 +8,6 @@ import json
 import pytest
 
 from pare_frida_mcp import tools as T
-from pare_frida_mcp.core import memory as memory_mod
 from pare_frida_mcp.core import scripts as scripts_mod
 from pare_frida_mcp.capture.store import CaptureStore
 from pare_frida_mcp.core.snapshots import SNAPSHOT_HANDLE
@@ -20,39 +19,6 @@ class _DummySession:
         self.script = object()
         self.frida_session = object()
         self.store = CaptureStore.open_memory()
-
-
-# --- Fix 1: enumerate_modules/exports must return a bounded list, not empty fallback ---
-
-@pytest.mark.asyncio
-async def test_enumerate_modules_returns_bounded_list_not_empty_fallback(monkeypatch):
-    sid = new_session_id()
-    T.MANAGER._sessions[sid] = _DummySession()
-    monkeypatch.setattr(memory_mod, "enumerate_modules",
-                        lambda script, filt: [{"name": "m" * 60, "base": hex(i)} for i in range(300)])
-    try:
-        res = json.loads(await T.enumerate_modules(sid))
-        assert "modules" in res, res            # NOT the generic _ok fallback
-        assert 0 < len(res["modules"]) < 300     # bounded to the cap
-        assert res["total"] == 300
-        assert res["truncated"] is True
-    finally:
-        T.MANAGER._sessions.pop(sid, None)
-
-
-@pytest.mark.asyncio
-async def test_enumerate_exports_returns_bounded_list_not_empty_fallback(monkeypatch):
-    sid = new_session_id()
-    T.MANAGER._sessions[sid] = _DummySession()
-    monkeypatch.setattr(memory_mod, "enumerate_exports",
-                        lambda script, module: [{"name": "e" * 60, "address": hex(i)} for i in range(300)])
-    try:
-        res = json.loads(await T.enumerate_exports(sid, module="libc.so"))
-        assert "exports" in res, res
-        assert 0 < len(res["exports"]) < 300
-        assert res["total"] == 300
-    finally:
-        T.MANAGER._sessions.pop(sid, None)
 
 
 # --- Fix 2: byte_budget above the cap must clamp, not empty the result ---

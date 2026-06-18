@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pare_frida_mcp.bounding import bound_text, fit_items
+from pare_frida_mcp.bounding import bound_text
 from pare_frida_mcp.config import load_config
 from pare_frida_mcp.core.sessions import Session, SessionManager
 from pare_frida_mcp.core import devices as devices_mod
@@ -113,6 +113,9 @@ async def detach(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         MANAGER.detach(sid)
+        # A torn-down session's module/export snapshots must not linger
+        # queryable (stale == wrong). Re-attach starts fresh snapshots.
+        SNAPSHOTS.delete_sessions(sid)
         return _ok(f"detached {sid}", session_id=sid)
     except KeyError:
         return _err(f"no such session {session_id!r}")
@@ -150,15 +153,21 @@ async def enumerate_applications(device_id: str = "") -> str:
         return _err("enumerate_applications failed", e)
 
 
-async def enumerate_modules(session_id: str, filter: str = "") -> str:
+async def enumerate_modules(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        mods = memory_mod.enumerate_modules(s.script, filter or None)
-        shown, fully = fit_items(mods, _CAP)
-        note = "" if fully else f" (showing {len(shown)}; narrow with filter=)"
-        return _ok(f"{len(mods)} modules{note}",
-                   modules=shown, total=len(mods), truncated=not fully)
+        # Session-scoped key: modules are meaningful only relative to THIS
+        # attached process, so the key must not collide across sessions.
+        key = snapshot_key("enumerate_modules", session=sid)
+        # Persist the FULL list uncapped (persist-then-search); return only a
+        # handle. /snapshot shows all; a text= search narrows. No fit_items.
+        mods = memory_mod.enumerate_modules(s.script)
+        n = SNAPSHOTS.replace(key, mods, summary_field="name")
+        return _ok(f"{n} modules captured to @snapshots. Run /snapshot to view "
+                   f"the full list, or search_capture(session_id='@snapshots', "
+                   f"text='<lib-or-symbol>') to find specific entries.",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
     except Exception as e:
         return _err("enumerate_modules failed", e)
 
@@ -167,11 +176,16 @@ async def enumerate_exports(session_id: str, module: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
+        # module= is part of the key so each module's exports get their own
+        # snapshot; session= scopes it to this attached process.
+        key = snapshot_key("enumerate_exports", session=sid, module=module)
         exps = memory_mod.enumerate_exports(s.script, module)
-        shown, fully = fit_items(exps, _CAP)
-        note = "" if fully else f" (showing {len(shown)} of {len(exps)})"
-        return _ok(f"{len(exps)} exports for {module}{note}",
-                   exports=shown, total=len(exps), truncated=not fully)
+        n = SNAPSHOTS.replace(key, exps, summary_field="name")
+        return _ok(f"{n} exports for {module} captured to @snapshots. Run "
+                   f"/snapshot to view the full list, or "
+                   f"search_capture(session_id='@snapshots', text='<symbol>') "
+                   f"to find specific entries.",
+                   store=SNAPSHOT_HANDLE, source=key, total=n)
     except Exception as e:
         return _err("enumerate_exports failed", e)
 

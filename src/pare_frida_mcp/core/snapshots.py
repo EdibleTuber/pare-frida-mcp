@@ -52,6 +52,23 @@ class SnapshotStore:
             self.store.delete_by_source(old)
         return len(items)
 
+    def delete_sessions(self, session_id: str) -> int:
+        """Purge every snapshot keyed to a session (called on detach).
+
+        Module/export snapshot keys embed `session=<sid>` as a ':'-delimited
+        segment; a torn-down session's maps must not stay queryable (a stale
+        view is simply wrong). Matching is segment-boundary aware (the segment
+        is either trailing or immediately followed by ':'), so purging session
+        's1' never catches 's10'.
+        """
+        seg = f"session={quote(str(session_id), safe='')}"
+        victims = [k for k in self._keys
+                   if k.endswith(seg) or (seg + ":") in k]
+        for k in victims:
+            self.store.delete_by_source(k)
+            self._keys.pop(k, None)
+        return len(victims)
+
     def latest_source(self) -> str | None:
         """The most-recently-replaced source key (MRU), or None if empty.
 
