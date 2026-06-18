@@ -99,3 +99,23 @@ async def test_enumerate_exports_handle_only(monkeypatch):
     assert res["total"] == 120, res
     assert "exports" not in res, res
     assert res["source"] == snapshot_key("enumerate_exports", session=sid, module="libc.so")
+
+
+@pytest.mark.asyncio
+async def test_detach_purges_session_snapshots():
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    key = snapshot_key("enumerate_modules", session=sid)
+    other = snapshot_key("enumerate_modules", session="other-sid")
+    T.SNAPSHOTS.replace(key, [{"name": "libc.so"}])
+    T.SNAPSHOTS.replace(other, [{"name": "libm.so"}])
+
+    res = json.loads(await T.detach(sid))
+    assert res.get("session_id") == sid, res
+
+    gone = json.loads(await T.search_capture("@snapshots", field="source",
+                                             contains=key, count_only=True))
+    assert gone["total"] == 0, gone
+    survives = json.loads(await T.search_capture("@snapshots", field="source",
+                                                 contains=other, count_only=True))
+    assert survives["total"] == 1, survives

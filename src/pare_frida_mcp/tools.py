@@ -113,6 +113,9 @@ async def detach(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         MANAGER.detach(sid)
+        # A torn-down session's module/export snapshots must not linger
+        # queryable (stale == wrong). Re-attach starts fresh snapshots.
+        SNAPSHOTS.delete_sessions(sid)
         return _ok(f"detached {sid}", session_id=sid)
     except KeyError:
         return _err(f"no such session {session_id!r}")
