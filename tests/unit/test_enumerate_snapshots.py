@@ -56,3 +56,14 @@ def test_delete_sessions_purges_only_that_session():
             "SELECT count(*) c FROM messages WHERE source=?", (source,)).fetchone()["c"]
     assert _count(a) == 0 and _count(a_exp) == 0   # sid-a purged
     assert _count(b) == 1                            # sid-b survives
+
+
+def test_delete_sessions_no_prefix_collision():
+    store = SnapshotStore()
+    s1 = snapshot_key("enumerate_modules", session="s1")
+    s10 = snapshot_key("enumerate_modules", session="s10")
+    store.replace(s1, [{"name": "a"}])
+    store.replace(s10, [{"name": "b"}])
+    removed = store.delete_sessions("s1")
+    assert removed == 1                 # only s1, NOT s10
+    assert store.latest_source() == s10

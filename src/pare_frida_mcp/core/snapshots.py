@@ -55,13 +55,15 @@ class SnapshotStore:
     def delete_sessions(self, session_id: str) -> int:
         """Purge every snapshot keyed to a session (called on detach).
 
-        Module/export snapshot keys embed `session=<sid>`; a torn-down
-        session's maps must not stay queryable (a stale view is simply wrong).
-        Matches the percent-encoded `session=<sid>` segment, which is delimited
-        by ':' and cannot contain ':' itself, so the substring test is safe.
+        Module/export snapshot keys embed `session=<sid>` as a ':'-delimited
+        segment; a torn-down session's maps must not stay queryable (a stale
+        view is simply wrong). Matching is segment-boundary aware (the segment
+        is either trailing or immediately followed by ':'), so purging session
+        's1' never catches 's10'.
         """
-        needle = f"session={quote(str(session_id), safe='')}"
-        victims = [k for k in self._keys if needle in k]
+        seg = f"session={quote(str(session_id), safe='')}"
+        victims = [k for k in self._keys
+                   if k.endswith(seg) or (seg + ":") in k]
         for k in victims:
             self.store.delete_by_source(k)
             self._keys.pop(k, None)
