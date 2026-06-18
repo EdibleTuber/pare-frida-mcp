@@ -59,9 +59,12 @@ def search_capture(store: CaptureStore, *, field: str | None = None,
     elif field is not None and contains is not None:
         if field not in _ALLOWED_FIELDS:
             raise ValueError(f"field not searchable: {field!r}")
-        like = f"%{contains}%"
-        count_sql = f"SELECT count(*) AS c FROM messages WHERE {field} LIKE ?"
-        ids_sql = f"SELECT seq FROM messages WHERE {field} LIKE ? ORDER BY seq"
+        # Escape LIKE metacharacters so a key containing '_' or '%' (snapshot
+        # source keys do, via quote()) matches literally, not as a wildcard.
+        esc = contains.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{esc}%"
+        count_sql = f"SELECT count(*) AS c FROM messages WHERE {field} LIKE ? ESCAPE '\\'"
+        ids_sql = f"SELECT seq FROM messages WHERE {field} LIKE ? ESCAPE '\\' ORDER BY seq"
         params = (like,)
     else:
         raise ValueError("provide either text=, or field= + contains=")
