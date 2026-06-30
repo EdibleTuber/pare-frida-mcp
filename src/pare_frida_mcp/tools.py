@@ -254,9 +254,26 @@ async def read_memory(session_id: str, address: str, size: int) -> str:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
         data = memory_mod.read_memory(s.script, address, size)
-        preview = data[:64].hex() if data else ""
-        return _ok(f"read {len(data) if data else 0} bytes",
-                   address=address, size=size, hex_preview=preview)
+        n = len(data) if data else 0
+        full_hex = data.hex() if data else ""
+        preview = full_hex[:128]  # first 64 bytes, for a glance without a round-trip
+        # Spill the FULL region to the session capture store rather than
+        # truncating to the preview. The old handler returned only the 64-byte
+        # preview and silently dropped everything past it; a larger read lost
+        # data with no handle to recover it. Retrieve the complete region via
+        # read_capture(session_id, seq) / search_capture. Session-scoped so it
+        # is auto-purged on detach and seq-addressed so repeated reads at
+        # different addresses don't clobber each other.
+        seq = s.store.write({
+            "type": "snapshot",
+            "source": "read_memory",
+            "summary": f"{n} bytes @ {address}",
+            "payload": {"address": address, "size": size, "hex": full_hex},
+        })
+        return _ok(f"read {n} bytes @ {address}; full region in capture seq {seq} "
+                   f"(read_capture(session_id='{sid}', seq={seq})).",
+                   address=address, size=size, bytes=n, hex_preview=preview,
+                   capture={"session_id": sid, "seq": seq})
     except Exception as e:
         return _err("read_memory failed", e)
 
