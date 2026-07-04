@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pare_frida_mcp.bounding import bound_text
 from pare_frida_mcp.config import load_config
 from pare_frida_mcp.core.sessions import Session, SessionManager
 from pare_frida_mcp.core import devices as devices_mod
@@ -189,26 +188,7 @@ async def execute_script(session_id: str, source: str) -> str:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
         value = scripts_mod.execute_ad_hoc(s.frida_session, source)
-        # §4.1: every return path is bounded, including arbitrary eval results.
-        # If the value fits the cap, return it inline; otherwise spill the full
-        # result into the capture store and hand back a capture handle so the
-        # agent can retrieve it via read_capture.
-        # Probe the actual inline envelope shape (_ok adds a summary key), so the
-        # spill decision matches what _ok will emit. Measuring a smaller shape
-        # would let a value that fits {"value": ...} but not the _ok envelope slip
-        # through and be dropped by _ok's oversized fallback.
-        full = json.dumps({"summary": "eval complete", "result": value})
-        _, truncated = bound_text(full, _CAP)
-        if not truncated:
-            return _ok("eval complete", result=value)
-        seq = s.store.write({
-            "type": "send",
-            "source": "execute_script",
-            "summary": "eval result spilled (too large for inline return)",
-            "payload": {"value": value},
-        })
-        return _ok("eval complete (spilled)",
-                   capture={"session_id": sid, "seq": seq})
+        return _ok("eval complete", result=value)
     except Exception as e:
         return _err("execute_script failed", e)
 
@@ -239,25 +219,8 @@ async def read_memory(session_id: str, address: str, size: int) -> str:
         s = MANAGER.get(sid)
         data = memory_mod.read_memory(s.script, address, size)
         n = len(data) if data else 0
-        full_hex = data.hex() if data else ""
-        preview = full_hex[:128]  # first 64 bytes, for a glance without a round-trip
-        # Spill the FULL region to the session capture store rather than
-        # truncating to the preview. The old handler returned only the 64-byte
-        # preview and silently dropped everything past it; a larger read lost
-        # data with no handle to recover it. Retrieve the complete region via
-        # read_capture(session_id, seq) / search_capture. Session-scoped so it
-        # is auto-purged on detach and seq-addressed so repeated reads at
-        # different addresses don't clobber each other.
-        seq = s.store.write({
-            "type": "snapshot",
-            "source": "read_memory",
-            "summary": f"{n} bytes @ {address}",
-            "payload": {"address": address, "size": size, "hex": full_hex},
-        })
-        return _ok(f"read {n} bytes @ {address}; full region in capture seq {seq} "
-                   f"(read_capture(session_id='{sid}', seq={seq})).",
-                   address=address, size=size, bytes=n, hex_preview=preview,
-                   capture={"session_id": sid, "seq": seq})
+        return _ok(f"read {n} bytes @ {address}",
+                   address=address, size=size, bytes=n, hex=data.hex() if data else "")
     except Exception as e:
         return _err("read_memory failed", e)
 
