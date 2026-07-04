@@ -27,32 +27,16 @@ _PAGE_BUDGET = 262144
 
 
 def _ok(summary: str, **extra: Any) -> str:
-    payload = {"summary": summary, **extra}
-    blob = json.dumps(payload)
-    if len(blob.encode("utf-8")) <= _CAP:
-        return blob
-    # Too large to inline. Return a VALID fallback envelope rather than a
-    # byte-truncated (invalid-JSON) string. Tools that pre-bound their output
-    # never reach here; this is the universal floor for those that don't.
-    short, _ = bound_text(summary, 512)
-    return json.dumps({
-        "summary": short,
-        "truncated": True,
-        "error": "result too large to inline; narrow the query or use "
-                 "search_capture/read_capture",
-    })
+    """Return the full JSON result envelope. No byte cap: bounding the model's
+    context window is now the host's (PARE's) job, applied at the wire."""
+    return json.dumps({"summary": summary, **extra})
 
 
-def _err(summary: str, exc: BaseException | None = None) -> str:
+def _err(summary: str, exc: Exception | None = None) -> str:
     payload = {"summary": summary, "error": True}
     if exc is not None:
-        payload["detail"] = f"{type(exc).__name__}: {exc}"
-    blob = json.dumps(payload)
-    if len(blob.encode("utf-8")) <= _CAP:
-        return blob
-    short, _ = bound_text(summary, 512)
-    detail, _ = bound_text(payload.get("detail", ""), _CAP // 2)
-    return json.dumps({"summary": short, "error": True, "detail": detail})
+        payload["detail"] = str(exc)
+    return json.dumps(payload)
 
 
 def _resolve_store(handle: str) -> tuple[CaptureStore, Session | None]:
