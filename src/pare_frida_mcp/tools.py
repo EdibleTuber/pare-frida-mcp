@@ -110,11 +110,7 @@ async def enumerate_processes(device_id: str = "") -> str:
     try:
         d = devices_mod.get_device(device_id or None)
         items = devices_mod.enumerate_processes(d)
-        key = snapshot_key("enumerate_processes", device=getattr(d, "id", "") or "")
-        n = SNAPSHOTS.replace(key, items, summary_field="name")
-        return _ok(f"{n} processes captured to @snapshots. Run /snapshot to view all, "
-                   f"or search_capture(session_id='@snapshots', field='source', contains='{key}').",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(items)} processes", processes=items)
     except Exception as e:
         return _err("enumerate_processes failed", e)
 
@@ -124,14 +120,9 @@ async def enumerate_applications(device_id: str = "") -> str:
         d = devices_mod.get_device(device_id or None)
         if getattr(d, "type", None) == "local":
             return _ok("application enumeration not supported on device type "
-                       "'local' - use enumerate_processes",
-                       store=SNAPSHOT_HANDLE, source=None, total=0)
+                       "'local' - use enumerate_processes", applications=[])
         items = devices_mod.enumerate_applications(d)
-        key = snapshot_key("enumerate_applications", device=getattr(d, "id", "") or "")
-        n = SNAPSHOTS.replace(key, items, summary_field="identifier")
-        return _ok(f"{n} applications captured to @snapshots. Run /snapshot to view all, "
-                   f"or search_capture(session_id='@snapshots', field='source', contains='{key}').",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(items)} applications", applications=items)
     except Exception as e:
         return _err("enumerate_applications failed", e)
 
@@ -140,17 +131,8 @@ async def enumerate_modules(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        # Session-scoped key: modules are meaningful only relative to THIS
-        # attached process, so the key must not collide across sessions.
-        key = snapshot_key("enumerate_modules", session=sid)
-        # Persist the FULL list uncapped (persist-then-search); return only a
-        # handle. /snapshot shows all; a text= search narrows. No fit_items.
         mods = memory_mod.enumerate_modules(s.script)
-        n = SNAPSHOTS.replace(key, mods, summary_field="name")
-        return _ok(f"{n} modules captured to @snapshots. Run /snapshot to view "
-                   f"the full list, or search_capture(session_id='@snapshots', "
-                   f"text='<lib-or-symbol>') to find specific entries.",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(mods)} modules", modules=mods)
     except Exception as e:
         return _err("enumerate_modules failed", e)
 
@@ -159,16 +141,8 @@ async def enumerate_exports(session_id: str, module: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        # module= is part of the key so each module's exports get their own
-        # snapshot; session= scopes it to this attached process.
-        key = snapshot_key("enumerate_exports", session=sid, module=module)
         exps = memory_mod.enumerate_exports(s.script, module)
-        n = SNAPSHOTS.replace(key, exps, summary_field="name")
-        return _ok(f"{n} exports for {module} captured to @snapshots. Run "
-                   f"/snapshot to view the full list, or "
-                   f"search_capture(session_id='@snapshots', text='<symbol>') "
-                   f"to find specific entries.",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(exps)} exports for {module}", exports=exps)
     except Exception as e:
         return _err("enumerate_exports failed", e)
 

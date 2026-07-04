@@ -3,7 +3,9 @@ import pytest
 
 from pare_frida_mcp import tools as T
 from pare_frida_mcp.core import devices as devices_mod
-from pare_frida_mcp.core.snapshots import SNAPSHOT_HANDLE
+from pare_frida_mcp.core import memory as memory_mod
+from pare_frida_mcp.capture.store import CaptureStore
+from pare_frida_mcp.ids import new_session_id
 
 
 class FakeProc:
@@ -28,61 +30,55 @@ class FakeDevice:
         return self._apps
 
 
-@pytest.mark.asyncio
-async def test_enumerate_processes_persists_and_returns_handle(monkeypatch):
-    dev = FakeDevice(procs=[FakeProc(1, "zygote"), FakeProc(2, "system_server")])
-    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    res = json.loads(await T.enumerate_processes(device_id="emulator-5554"))
-    assert res["store"] == SNAPSHOT_HANDLE
-    assert res["total"] == 2
-    assert res["source"] == "enumerate_processes:device=emulator-5554"
-    assert res.get("error") is not True
-    found = json.loads(await T.search_capture(SNAPSHOT_HANDLE, field="source",
-                                              contains=res["source"]))
-    assert found["total"] == 2
+class _DummySession:
+    """Minimal stand-in for a live Session for enumerate_modules/exports tests."""
+    def __init__(self):
+        self.script = object()
+        self.frida_session = None
+        self.store = CaptureStore.open_memory()
+
+    def flush(self):
+        pass
 
 
-@pytest.mark.asyncio
-async def test_enumerate_processes_replace_semantics(monkeypatch):
-    dev = FakeDevice(procs=[FakeProc(1, "old_a"), FakeProc(2, "old_b")])
-    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    await T.enumerate_processes(device_id="emulator-5554")
-    dev._procs = [FakeProc(9, "fresh_only")]
-    res = json.loads(await T.enumerate_processes(device_id="emulator-5554"))
-    found = json.loads(await T.search_capture(SNAPSHOT_HANDLE, field="source",
-                                              contains=res["source"]))
-    names = {m["summary"] for m in found["matches"]}
-    assert names == {"fresh_only"}
-
+# ---------------------------------------------------------------------------
+# enumerate_processes
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_enumerate_key_normalizes_on_resolved_device_id(monkeypatch):
-    dev = FakeDevice(id="emulator-5554", procs=[FakeProc(1, "p")])
+async def test_enumerate_processes_returns_full_list(monkeypatch):
+    dev = FakeDevice(procs=[FakeProc(1, "init"), FakeProc(9, "zygote")])
     monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    omitted = json.loads(await T.enumerate_processes())
-    explicit = json.loads(await T.enumerate_processes(device_id="emulator-5554"))
-    assert omitted["source"] == explicit["source"]
+    out = await T.enumerate_processes("")
+    doc = json.loads(out)
+    assert "processes" in doc
+    assert len(doc["processes"]) == 2
+    assert doc["summary"] == "2 processes"
+    assert "store" not in doc
+    assert "@snapshots" not in out
+    assert doc.get("error") is not True
 
 
 @pytest.mark.asyncio
-async def test_enumerate_applications_uses_identifier_as_glance_value(monkeypatch):
-    dev = FakeDevice(apps=[FakeApp("com.x.y", "Y App", 0)])
+async def test_enumerate_processes_list_contents(monkeypatch):
+    items = [{"pid": 1, "name": "init"}, {"pid": 9, "name": "zygote"}]
+    dev = FakeDevice(procs=[FakeProc(1, "init"), FakeProc(9, "zygote")])
     monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    res = json.loads(await T.enumerate_applications(device_id="emulator-5554"))
-    assert res["source"] == "enumerate_applications:device=emulator-5554"
-    found = json.loads(await T.search_capture(SNAPSHOT_HANDLE, field="source",
-                                              contains=res["source"]))
-    assert found["matches"][0]["summary"] == "com.x.y"
+    doc = json.loads(await T.enumerate_processes(device_id="emulator-5554"))
+    # processes list should match what devices_mod.enumerate_processes produces
+    assert {p["pid"] for p in doc["processes"]} == {1, 9}
+    assert "source" not in doc
 
 
 @pytest.mark.asyncio
-async def test_enumerate_applications_local_device_short_circuits(monkeypatch):
-    dev = FakeDevice(type="local", id="local")
+async def test_enumerate_processes_no_snapshot_side_effect(monkeypatch):
+    """Calling enumerate_processes must NOT write anything to @snapshots."""
+    dev = FakeDevice(procs=[FakeProc(1, "init")])
     monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    res = json.loads(await T.enumerate_applications())
-    assert res["total"] == 0
-    assert "not supported" in res["summary"]
-    assert res.get("error") is not True
+    await T.enumerate_processes()
+    # The global SNAPSHOTS store should remain empty.
+    found = json.loads(await T.search_capture("@snapshots", text="init", count_only=True))
+    assert found["total"] == 0
 
 
 @pytest.mark.asyncio
@@ -95,6 +91,43 @@ async def test_enumerate_processes_error_path(monkeypatch):
     assert "enumerate_processes failed" in res["summary"]
 
 
+# ---------------------------------------------------------------------------
+# enumerate_applications
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_enumerate_applications_returns_full_list(monkeypatch):
+    dev = FakeDevice(type="usb", apps=[FakeApp("com.x.y", "Y App", 0)])
+    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
+    doc = json.loads(await T.enumerate_applications(device_id="emulator-5554"))
+    assert "applications" in doc
+    assert len(doc["applications"]) == 1
+    assert doc["applications"][0]["identifier"] == "com.x.y"
+    assert "store" not in doc
+    assert "source" not in doc
+    assert doc.get("error") is not True
+
+
+@pytest.mark.asyncio
+async def test_enumerate_applications_local_device_short_circuits(monkeypatch):
+    dev = FakeDevice(type="local", id="local")
+    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
+    res = json.loads(await T.enumerate_applications())
+    assert res["applications"] == []
+    assert "not supported" in res["summary"]
+    assert res.get("error") is not True
+    assert "store" not in res
+
+
+@pytest.mark.asyncio
+async def test_enumerate_applications_no_snapshot_side_effect(monkeypatch):
+    dev = FakeDevice(type="usb", apps=[FakeApp("com.a.b", "AB", 0)])
+    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
+    await T.enumerate_applications()
+    # enumerate_applications must NOT write anything to @snapshots
+    assert T.SNAPSHOTS.latest_source() is None
+
+
 @pytest.mark.asyncio
 async def test_enumerate_applications_error_path(monkeypatch):
     def boom(_id):
@@ -103,3 +136,99 @@ async def test_enumerate_applications_error_path(monkeypatch):
     res = json.loads(await T.enumerate_applications(device_id="nope"))
     assert res["error"] is True
     assert "enumerate_applications failed" in res["summary"]
+
+
+# ---------------------------------------------------------------------------
+# enumerate_modules
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_returns_full_list(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    mods = [{"name": f"lib{i}.so", "base": hex(i), "size": i} for i in range(5)]
+    monkeypatch.setattr(memory_mod, "enumerate_modules", lambda script: mods)
+    doc = json.loads(await T.enumerate_modules(sid))
+    assert "modules" in doc
+    assert doc["modules"] == mods
+    assert doc["summary"] == "5 modules"
+    assert "store" not in doc
+    assert "source" not in doc
+    assert doc.get("error") is not True
+
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_no_snapshot_side_effect(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_modules",
+                        lambda script: [{"name": "libc.so"}])
+    await T.enumerate_modules(sid)
+    # enumerate_modules must NOT write anything to @snapshots
+    assert T.SNAPSHOTS.latest_source() is None
+
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_no_live_session_errors():
+    sid = new_session_id()  # well-formed but never registered
+    res = json.loads(await T.enumerate_modules(sid))
+    assert res.get("error") is True
+
+
+@pytest.mark.asyncio
+async def test_enumerate_modules_empty_list(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_modules", lambda script: [])
+    res = json.loads(await T.enumerate_modules(sid))
+    assert res.get("error") is not True
+    assert res["modules"] == []
+    assert "0 modules" in res["summary"]
+
+
+# ---------------------------------------------------------------------------
+# enumerate_exports
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_enumerate_exports_returns_full_list(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    exps = [{"name": f"sym{i}", "address": hex(i)} for i in range(3)]
+    monkeypatch.setattr(memory_mod, "enumerate_exports", lambda script, module: exps)
+    doc = json.loads(await T.enumerate_exports(sid, module="libc.so"))
+    assert "exports" in doc
+    assert doc["exports"] == exps
+    assert "3 exports for libc.so" in doc["summary"]
+    assert "store" not in doc
+    assert "source" not in doc
+    assert doc.get("error") is not True
+
+
+@pytest.mark.asyncio
+async def test_enumerate_exports_no_snapshot_side_effect(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_exports",
+                        lambda script, module: [{"name": "open"}])
+    await T.enumerate_exports(sid, module="libc.so")
+    found = json.loads(await T.search_capture("@snapshots", text="open", count_only=True))
+    assert found["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_enumerate_exports_no_live_session_errors():
+    sid = new_session_id()
+    res = json.loads(await T.enumerate_exports(sid, module="libc.so"))
+    assert res.get("error") is True
+
+
+@pytest.mark.asyncio
+async def test_enumerate_exports_module_in_summary(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(memory_mod, "enumerate_exports",
+                        lambda script, module: [{"name": "malloc"}])
+    doc = json.loads(await T.enumerate_exports(sid, module="libm.so"))
+    assert "libm.so" in doc["summary"]
+    assert doc["exports"][0]["name"] == "malloc"
