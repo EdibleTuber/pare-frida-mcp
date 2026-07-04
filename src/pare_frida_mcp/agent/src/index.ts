@@ -20,6 +20,15 @@ rpc.exports = {
     });
     return out;
   },
+  javaEnumerateMethods(cls: string) {
+    const out: { name: string; signature: string }[] = [];
+    Java.perform(() => {
+      const klass = Java.use(cls);
+      klass.class.getDeclaredMethods()
+        .forEach((m: any) => out.push({ name: m.getName(), signature: m.toString() }));
+    });
+    return out;
+  },
   javaHookInstall(cls: string, method: string, overload?: string) {
     Java.perform(() => {
       const klass = Java.use(cls);

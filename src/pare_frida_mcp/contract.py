@@ -57,6 +57,18 @@ TOOL_SPECS: list[ToolSpec] = [
              "List a module's exports in an ATTACHED process (requires session_id "
              "from attach). Returns the full export list.",
              _in(session_id={"type": "string"}, module={"type": "string"})),
+    ToolSpec("enumerate_classes", "low",
+             "List LOADED Java classes in an ATTACHED process (requires session_id "
+             "from attach), filtered by substring. Classes load lazily - navigate "
+             "into the screen/activity you care about first, then enumerate. "
+             "Returns the loaded class list (capped at 500).",
+             _in(session_id={"type": "string"}, filter={"type": "string"})),
+    ToolSpec("enumerate_methods", "low",
+             "List a Java class's DECLARED methods in an ATTACHED process "
+             "(requires session_id). Declared-only (excludes inherited framework "
+             "methods). Returns {name, signature} per method; signature carries "
+             "parameter types for java_hook overload resolution.",
+             _in(session_id={"type": "string"}, cls={"type": "string"})),
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),
     ToolSpec("execute_script", "critical", "Evaluate arbitrary JS in a session.",
