@@ -303,8 +303,9 @@ enumerate_classes(session_id, filter="OMTG")
 # expect the loaded OMTG_* classes to include OMTG_DATAST_001_KeyStore
 
 enumerate_methods(session_id, "sg.vp.owasp_mobile.OMTG_Android.OMTG_DATAST_001_KeyStore")
-# expect exactly these 5 declared methods (ground truth from dexdump):
-#   <init>, createNewKeys, encryptString, decryptString, onCreate
+# expect these 4 declared methods (getDeclaredMethods excludes the <init>
+# constructor by design):
+#   createNewKeys, encryptString, decryptString, onCreate
 ```
 
-**Acceptance:** `enumerate_methods` returns the 5 ground-truth methods with signatures; both tools report tier `low`; `execute_script` remains `critical`.
+**Acceptance:** `enumerate_methods` returns the 4 declared methods with signatures (the `<init>` constructor is excluded by `getDeclaredMethods`); both tools report tier `low`; `execute_script` remains `critical`. Verified live 2026-07-04.

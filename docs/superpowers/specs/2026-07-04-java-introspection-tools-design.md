@@ -148,10 +148,12 @@ KeyStore = 5). The capture layer bounds anything large at the wire regardless.
   lists → assert envelope shape + summary for both tools; assert the `_err` path
   on a raised exception.
 - **Contract** (`tests/unit/test_contract.py`): both tools present at tier `low`.
-- **Live acceptance:** on the KeyStore challenge screen,
+- **Live acceptance:**
   `enumerate_methods("sg.vp.owasp_mobile.OMTG_Android.OMTG_DATAST_001_KeyStore")`
-  returns exactly the 5 ground-truth methods (`<init>`, `createNewKeys`,
-  `encryptString`, `decryptString`, `onCreate`).
+  returns the 4 declared methods `createNewKeys`, `encryptString`,
+  `decryptString`, `onCreate` with signatures. `getDeclaredMethods()` excludes
+  the `<init>` constructor by design (constructors are a separate reflection
+  category); constructor enumeration is deferred like fields.
 
 **Stated gap:** the TypeScript export itself cannot be cleanly unit-tested (it
 needs the Frida runtime + a live VM). It is covered by the live acceptance test,
@@ -161,7 +163,8 @@ not by unit tests.
 
 1. `enumerate_classes(filter="OMTG")` on the KeyStore screen lists the loaded
    OMTG classes.
-2. `enumerate_methods(<KeyStore fqcn>)` returns the 5 ground-truth methods with
-   signatures.
+2. `enumerate_methods(<KeyStore fqcn>)` returns the 4 declared methods
+   (`createNewKeys`, `encryptString`, `decryptString`, `onCreate`) with
+   signatures; the `<init>` constructor is excluded by `getDeclaredMethods`.
 3. Both tools are tier `low`; `execute_script` remains `critical`.
 4. Full unit suite green; no regression to existing tools.
