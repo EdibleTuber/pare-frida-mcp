@@ -45,3 +45,31 @@ async def test_enumerate_classes_no_live_session_errors():
 
 def test_enumerate_classes_is_low_tier():
     assert _by_name()["enumerate_classes"].risk_tier == "low"
+
+
+@pytest.mark.asyncio
+async def test_enumerate_methods_returns_envelope(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    methods = [
+        {"name": "encryptString", "signature": "public void C.encryptString(java.lang.String)"},
+        {"name": "decryptString", "signature": "public void C.decryptString(java.lang.String)"},
+    ]
+    monkeypatch.setattr(java_mod, "enumerate_methods", lambda script, cls: methods)
+    try:
+        doc = json.loads(await T.enumerate_methods(sid, "a.C"))
+        assert doc.get("error") is not True, doc
+        assert doc["methods"] == methods
+        assert doc["summary"] == "2 methods for a.C"
+    finally:
+        T.MANAGER._sessions.pop(sid, None)
+
+
+@pytest.mark.asyncio
+async def test_enumerate_methods_no_live_session_errors():
+    res = json.loads(await T.enumerate_methods(new_session_id(), "a.C"))
+    assert res.get("error") is True
+
+
+def test_enumerate_methods_is_low_tier():
+    assert _by_name()["enumerate_methods"].risk_tier == "low"

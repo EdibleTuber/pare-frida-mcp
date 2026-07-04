@@ -7,3 +7,7 @@ def java_hook(script, cls: str, method: str, overload: str | None = None) -> dic
 
 def enumerate_classes(script, filter: str = "") -> list[str]:
     return script.exports_sync.java_enumerate(filter)
+
+
+def enumerate_methods(script, cls: str) -> list[dict]:
+    return script.exports_sync.java_enumerate_methods(cls)
