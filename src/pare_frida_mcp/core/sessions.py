@@ -4,18 +4,16 @@ from collections import deque
 from typing import Any
 
 from pare_frida_mcp.config import Config
-from pare_frida_mcp.capture.store import CaptureStore
 from pare_frida_mcp.ids import new_session_id
 
 
 class Session:
     def __init__(self, session_id: str, script: Any, pid: int, name: str,
-                 store: CaptureStore, queue_bound: int):
+                 queue_bound: int):
         self.id = session_id
         self.script = script
         self.pid = pid
         self.name = name
-        self.store = store
         self._queue: deque[dict] = deque()
         self._queue_bound = queue_bound
         self.dropped = 0
@@ -29,8 +27,7 @@ class Session:
         self._queue.append(message)
 
     def flush(self) -> None:
-        while self._queue:
-            self.store.write(self._queue.popleft())
+        self._queue.clear()
 
 
 class SessionManager:
@@ -41,9 +38,7 @@ class SessionManager:
 
     def register_session(self, *, script: Any, pid: int, name: str) -> str:
         sid = new_session_id()
-        store = CaptureStore.open(self._config.capture_dir, sid,
-                                  self._config.blob_threshold)
-        self._sessions[sid] = Session(sid, script, pid, name, store, self._queue_bound)
+        self._sessions[sid] = Session(sid, script, pid, name, self._queue_bound)
         return sid
 
     def get(self, session_id: str) -> Session:
@@ -66,7 +61,7 @@ class SessionManager:
         return rows
 
     def detach(self, session_id: str) -> None:
-        """Detach the live session and tear down its capture store.
+        """Detach the live session.
 
         Raises KeyError if session_id is unknown. If the underlying
         frida.Session is already dead (USB drop), the detach() call may throw -
@@ -80,13 +75,9 @@ class SessionManager:
             except Exception:
                 pass
         s.flush()
-        s.store.close()
 
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()
-
-    def store_for(self, session_id: str) -> CaptureStore:
-        return self._sessions[session_id].store
 
     def dropped_count(self, session_id: str) -> int:
         return self._sessions[session_id].dropped
@@ -94,5 +85,4 @@ class SessionManager:
     def close_all(self) -> None:
         for s in self._sessions.values():
             s.flush()
-            s.store.close()
         self._sessions.clear()

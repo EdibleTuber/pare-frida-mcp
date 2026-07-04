@@ -3,66 +3,30 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pare_frida_mcp.bounding import bound_text
 from pare_frida_mcp.config import load_config
 from pare_frida_mcp.core.sessions import Session, SessionManager
 from pare_frida_mcp.core import devices as devices_mod
 from pare_frida_mcp.core import scripts as scripts_mod
 from pare_frida_mcp.core import memory as memory_mod
 from pare_frida_mcp.android import java as java_mod
-from pare_frida_mcp.capture.search import search_capture as _search_capture
-from pare_frida_mcp.capture.read import read_capture as _read_capture
-from pare_frida_mcp.capture.page import page_rows as _page_rows, list_sources as _list_sources
-from pare_frida_mcp.capture.store import CaptureStore
-from pare_frida_mcp.core.snapshots import SnapshotStore, SNAPSHOT_HANDLE, snapshot_key
 from pare_frida_mcp.ids import validate_session_id
 
 CFG = load_config()
 MANAGER = SessionManager(CFG)
-SNAPSHOTS = SnapshotStore()
 _CAP = CFG.max_tool_bytes
-# page_capture is consumed by the /snapshot command, NOT model context, so it
-# is exempt from the 4096-byte model cap. Bound to a generous budget instead.
-_PAGE_BUDGET = 262144
 
 
 def _ok(summary: str, **extra: Any) -> str:
-    payload = {"summary": summary, **extra}
-    blob = json.dumps(payload)
-    if len(blob.encode("utf-8")) <= _CAP:
-        return blob
-    # Too large to inline. Return a VALID fallback envelope rather than a
-    # byte-truncated (invalid-JSON) string. Tools that pre-bound their output
-    # never reach here; this is the universal floor for those that don't.
-    short, _ = bound_text(summary, 512)
-    return json.dumps({
-        "summary": short,
-        "truncated": True,
-        "error": "result too large to inline; narrow the query or use "
-                 "search_capture/read_capture",
-    })
+    """Return the full JSON result envelope. No byte cap: bounding the model's
+    context window is now the host's (PARE's) job, applied at the wire."""
+    return json.dumps({"summary": summary, **extra})
 
 
-def _err(summary: str, exc: BaseException | None = None) -> str:
+def _err(summary: str, exc: Exception | None = None) -> str:
     payload = {"summary": summary, "error": True}
     if exc is not None:
-        payload["detail"] = f"{type(exc).__name__}: {exc}"
-    blob = json.dumps(payload)
-    if len(blob.encode("utf-8")) <= _CAP:
-        return blob
-    short, _ = bound_text(summary, 512)
-    detail, _ = bound_text(payload.get("detail", ""), _CAP // 2)
-    return json.dumps({"summary": short, "error": True, "detail": detail})
-
-
-def _resolve_store(handle: str) -> tuple[CaptureStore, Session | None]:
-    """Return (store, session). For the reserved snapshot handle, session is
-    None (no pending queue to flush); otherwise resolve the session store."""
-    if handle == SNAPSHOT_HANDLE:
-        return SNAPSHOTS.store, None
-    sid = validate_session_id(handle)
-    s = MANAGER.get(sid)
-    return s.store, s
+        payload["detail"] = str(exc)
+    return json.dumps(payload)
 
 
 async def list_devices() -> str:
@@ -113,9 +77,6 @@ async def detach(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         MANAGER.detach(sid)
-        # A torn-down session's module/export snapshots must not linger
-        # queryable (stale == wrong). Re-attach starts fresh snapshots.
-        SNAPSHOTS.delete_sessions(sid)
         return _ok(f"detached {sid}", session_id=sid)
     except KeyError:
         return _err(f"no such session {session_id!r}")
@@ -127,11 +88,7 @@ async def enumerate_processes(device_id: str = "") -> str:
     try:
         d = devices_mod.get_device(device_id or None)
         items = devices_mod.enumerate_processes(d)
-        key = snapshot_key("enumerate_processes", device=getattr(d, "id", "") or "")
-        n = SNAPSHOTS.replace(key, items, summary_field="name")
-        return _ok(f"{n} processes captured to @snapshots. Run /snapshot to view all, "
-                   f"or search_capture(session_id='@snapshots', field='source', contains='{key}').",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(items)} processes", processes=items)
     except Exception as e:
         return _err("enumerate_processes failed", e)
 
@@ -141,14 +98,9 @@ async def enumerate_applications(device_id: str = "") -> str:
         d = devices_mod.get_device(device_id or None)
         if getattr(d, "type", None) == "local":
             return _ok("application enumeration not supported on device type "
-                       "'local' - use enumerate_processes",
-                       store=SNAPSHOT_HANDLE, source=None, total=0)
+                       "'local' - use enumerate_processes", applications=[])
         items = devices_mod.enumerate_applications(d)
-        key = snapshot_key("enumerate_applications", device=getattr(d, "id", "") or "")
-        n = SNAPSHOTS.replace(key, items, summary_field="identifier")
-        return _ok(f"{n} applications captured to @snapshots. Run /snapshot to view all, "
-                   f"or search_capture(session_id='@snapshots', field='source', contains='{key}').",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(items)} applications", applications=items)
     except Exception as e:
         return _err("enumerate_applications failed", e)
 
@@ -157,17 +109,8 @@ async def enumerate_modules(session_id: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        # Session-scoped key: modules are meaningful only relative to THIS
-        # attached process, so the key must not collide across sessions.
-        key = snapshot_key("enumerate_modules", session=sid)
-        # Persist the FULL list uncapped (persist-then-search); return only a
-        # handle. /snapshot shows all; a text= search narrows. No fit_items.
         mods = memory_mod.enumerate_modules(s.script)
-        n = SNAPSHOTS.replace(key, mods, summary_field="name")
-        return _ok(f"{n} modules captured to @snapshots. Run /snapshot to view "
-                   f"the full list, or search_capture(session_id='@snapshots', "
-                   f"text='<lib-or-symbol>') to find specific entries.",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(mods)} modules", modules=mods)
     except Exception as e:
         return _err("enumerate_modules failed", e)
 
@@ -176,16 +119,8 @@ async def enumerate_exports(session_id: str, module: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        # module= is part of the key so each module's exports get their own
-        # snapshot; session= scopes it to this attached process.
-        key = snapshot_key("enumerate_exports", session=sid, module=module)
         exps = memory_mod.enumerate_exports(s.script, module)
-        n = SNAPSHOTS.replace(key, exps, summary_field="name")
-        return _ok(f"{n} exports for {module} captured to @snapshots. Run "
-                   f"/snapshot to view the full list, or "
-                   f"search_capture(session_id='@snapshots', text='<symbol>') "
-                   f"to find specific entries.",
-                   store=SNAPSHOT_HANDLE, source=key, total=n)
+        return _ok(f"{len(exps)} exports for {module}", exports=exps)
     except Exception as e:
         return _err("enumerate_exports failed", e)
 
@@ -205,26 +140,7 @@ async def execute_script(session_id: str, source: str) -> str:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
         value = scripts_mod.execute_ad_hoc(s.frida_session, source)
-        # §4.1: every return path is bounded, including arbitrary eval results.
-        # If the value fits the cap, return it inline; otherwise spill the full
-        # result into the capture store and hand back a capture handle so the
-        # agent can retrieve it via read_capture.
-        # Probe the actual inline envelope shape (_ok adds a summary key), so the
-        # spill decision matches what _ok will emit. Measuring a smaller shape
-        # would let a value that fits {"value": ...} but not the _ok envelope slip
-        # through and be dropped by _ok's oversized fallback.
-        full = json.dumps({"summary": "eval complete", "result": value})
-        _, truncated = bound_text(full, _CAP)
-        if not truncated:
-            return _ok("eval complete", result=value)
-        seq = s.store.write({
-            "type": "send",
-            "source": "execute_script",
-            "summary": "eval result spilled (too large for inline return)",
-            "payload": {"value": value},
-        })
-        return _ok("eval complete (spilled)",
-                   capture={"session_id": sid, "seq": seq})
+        return _ok("eval complete", result=value)
     except Exception as e:
         return _err("execute_script failed", e)
 
@@ -255,25 +171,8 @@ async def read_memory(session_id: str, address: str, size: int) -> str:
         s = MANAGER.get(sid)
         data = memory_mod.read_memory(s.script, address, size)
         n = len(data) if data else 0
-        full_hex = data.hex() if data else ""
-        preview = full_hex[:128]  # first 64 bytes, for a glance without a round-trip
-        # Spill the FULL region to the session capture store rather than
-        # truncating to the preview. The old handler returned only the 64-byte
-        # preview and silently dropped everything past it; a larger read lost
-        # data with no handle to recover it. Retrieve the complete region via
-        # read_capture(session_id, seq) / search_capture. Session-scoped so it
-        # is auto-purged on detach and seq-addressed so repeated reads at
-        # different addresses don't clobber each other.
-        seq = s.store.write({
-            "type": "snapshot",
-            "source": "read_memory",
-            "summary": f"{n} bytes @ {address}",
-            "payload": {"address": address, "size": size, "hex": full_hex},
-        })
-        return _ok(f"read {n} bytes @ {address}; full region in capture seq {seq} "
-                   f"(read_capture(session_id='{sid}', seq={seq})).",
-                   address=address, size=size, bytes=n, hex_preview=preview,
-                   capture={"session_id": sid, "seq": seq})
+        return _ok(f"read {n} bytes @ {address}",
+                   address=address, size=size, bytes=n, hex=data.hex() if data else "")
     except Exception as e:
         return _err("read_memory failed", e)
 
@@ -288,74 +187,3 @@ async def write_memory(session_id: str, address: str, bytes: str) -> str:
         return _err("write_memory failed", e)
 
 
-async def search_capture(session_id: str, field: str = "", contains: str = "",
-                         text: str = "", byte_budget: int = 0,
-                         limit: int = 0, count_only: bool = False) -> str:
-    try:
-        store, s = _resolve_store(session_id)
-        if s is not None:
-            s.flush()  # ensure pending messages are persisted before searching
-        # Clamp to _CAP: a caller-supplied budget above the cap would let the
-        # engine fill past what _ok can emit, tripping _ok's fallback and
-        # dropping every match instead of returning a bounded page.
-        budget = min(byte_budget or _CAP, _CAP)
-        if count_only:
-            res = _search_capture(store, field=field or None, contains=contains or None,
-                                  text=text or None, count_only=True)
-            return _ok(f"{res['total']} matches (count only). Add text= terms to "
-                       f"narrow, or search again without count_only to sample.",
-                       total=res["total"], count_only=True)
-        res = _search_capture(store, field=field or None, contains=contains or None,
-                              text=text or None, limit=limit or 50, byte_budget=budget)
-        if not res["truncated"]:
-            summary = f"{res['total']} matches"
-        elif res["sampled"]:
-            summary = (f"{res['total']} matches - showing a {res['returned']}-row spread "
-                       f"sample. Narrow with a more specific text=, or "
-                       f"read_capture(seq=...) for one record.")
-        else:
-            summary = (f"{res['total']} matches - showing first {res['returned']} "
-                       f"(output capped). Narrow with a more specific text=, or "
-                       f"read_capture(seq=...) for one record.")
-        return _ok(summary, **res)
-    except Exception as e:
-        return _err("search_capture failed", e)
-
-
-async def read_capture(session_id: str, seq: int, offset: int = 0, byte_budget: int = 0) -> str:
-    try:
-        store, s = _resolve_store(session_id)
-        if s is not None:
-            s.flush()
-        # Clamp to _CAP, then reserve headroom for the _ok envelope so the
-        # wrapped {summary, seq, offset, truncated, next_offset, text} payload
-        # stays under the cap and never trips _ok's data-dropping fallback.
-        budget = max(1, min(byte_budget or _CAP, _CAP) - 512)
-        res = _read_capture(store, seq=seq, offset=offset, byte_budget=budget)
-        return _ok(f"seq {seq}", **res)
-    except Exception as e:
-        return _err("read_capture failed", e)
-
-
-async def page_capture(session_id: str, source: str = "", field: str = "",
-                       contains: str = "", list_sources: bool = False) -> str:
-    try:
-        store, _ = _resolve_store(session_id)
-        if list_sources:
-            srcs = _list_sources(store)
-            return json.dumps({"summary": f"{len(srcs)} snapshots",
-                               "store": session_id, "sources": srcs})
-        # Latest resolution is @snapshots-specific (MRU); v0 only uses @snapshots.
-        src = source or (SNAPSHOTS.latest_source() if session_id == SNAPSHOT_HANDLE else "")
-        if not src:
-            return json.dumps({"summary": "no snapshots captured yet",
-                               "store": session_id, "sources": []})
-        res = _page_rows(store, source=src, field=field or None,
-                         contains=contains or None, byte_budget=_PAGE_BUDGET)
-        summary = f"{res['shown']} of {res['total']} rows for {src}"
-        # Direct json.dumps (NOT _ok): intentionally bypasses the model cap.
-        return json.dumps({"summary": summary, "store": session_id, "source": src,
-                           "rows": res["rows"], "total": res["total"],
-                           "shown": res["shown"]})
-    except Exception as e:
-        return _err("page_capture failed", e)
