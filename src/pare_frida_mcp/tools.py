@@ -56,11 +56,19 @@ async def attach(target: str = "", device_id: str = "") -> str:
             if not matches:
                 return _err(f"process {target!r} not found")
             pid, name = matches[0].pid, matches[0].name
+        dev_id = getattr(d, "id", None)
+        existing = MANAGER.find_live_session(pid, dev_id)
+        if existing is not None:
+            es = MANAGER.get(existing)
+            return _ok(f"reusing live session for pid {pid}", session_id=existing,
+                       pid=pid, name=es.name, reused=True)
         fsession = d.attach(pid)
         script = scripts_mod.load_bundled_script(fsession)
-        sid = MANAGER.register_session(script=script, pid=pid, name=name)
+        sid = MANAGER.register_session(script=script, pid=pid, name=name,
+                                       device_id=dev_id)
         MANAGER.get(sid).frida_session = fsession
-        return _ok(f"attached pid {pid}", session_id=sid, pid=pid, name=name)
+        return _ok(f"attached pid {pid}", session_id=sid, pid=pid, name=name,
+                   reused=False)
     except Exception as e:
         return _err("attach failed", e)
 
