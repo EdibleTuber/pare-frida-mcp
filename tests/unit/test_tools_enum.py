@@ -4,7 +4,6 @@ import pytest
 from pare_frida_mcp import tools as T
 from pare_frida_mcp.core import devices as devices_mod
 from pare_frida_mcp.core import memory as memory_mod
-from pare_frida_mcp.capture.store import CaptureStore
 from pare_frida_mcp.ids import new_session_id
 
 
@@ -35,7 +34,6 @@ class _DummySession:
     def __init__(self):
         self.script = object()
         self.frida_session = None
-        self.store = CaptureStore.open_memory()
 
     def flush(self):
         pass
@@ -55,30 +53,16 @@ async def test_enumerate_processes_returns_full_list(monkeypatch):
     assert len(doc["processes"]) == 2
     assert doc["summary"] == "2 processes"
     assert "store" not in doc
-    assert "@snapshots" not in out
     assert doc.get("error") is not True
 
 
 @pytest.mark.asyncio
 async def test_enumerate_processes_list_contents(monkeypatch):
-    items = [{"pid": 1, "name": "init"}, {"pid": 9, "name": "zygote"}]
     dev = FakeDevice(procs=[FakeProc(1, "init"), FakeProc(9, "zygote")])
     monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
     doc = json.loads(await T.enumerate_processes(device_id="emulator-5554"))
-    # processes list should match what devices_mod.enumerate_processes produces
     assert {p["pid"] for p in doc["processes"]} == {1, 9}
     assert "source" not in doc
-
-
-@pytest.mark.asyncio
-async def test_enumerate_processes_no_snapshot_side_effect(monkeypatch):
-    """Calling enumerate_processes must NOT write anything to @snapshots."""
-    dev = FakeDevice(procs=[FakeProc(1, "init")])
-    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    await T.enumerate_processes()
-    # The global SNAPSHOTS store should remain empty.
-    found = json.loads(await T.search_capture("@snapshots", text="init", count_only=True))
-    assert found["total"] == 0
 
 
 @pytest.mark.asyncio
@@ -120,15 +104,6 @@ async def test_enumerate_applications_local_device_short_circuits(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_enumerate_applications_no_snapshot_side_effect(monkeypatch):
-    dev = FakeDevice(type="usb", apps=[FakeApp("com.a.b", "AB", 0)])
-    monkeypatch.setattr(devices_mod, "get_device", lambda _id: dev)
-    await T.enumerate_applications()
-    # enumerate_applications must NOT write anything to @snapshots
-    assert T.SNAPSHOTS.latest_source() is None
-
-
-@pytest.mark.asyncio
 async def test_enumerate_applications_error_path(monkeypatch):
     def boom(_id):
         raise RuntimeError("device not found")
@@ -155,17 +130,6 @@ async def test_enumerate_modules_returns_full_list(monkeypatch):
     assert "store" not in doc
     assert "source" not in doc
     assert doc.get("error") is not True
-
-
-@pytest.mark.asyncio
-async def test_enumerate_modules_no_snapshot_side_effect(monkeypatch):
-    sid = new_session_id()
-    T.MANAGER._sessions[sid] = _DummySession()
-    monkeypatch.setattr(memory_mod, "enumerate_modules",
-                        lambda script: [{"name": "libc.so"}])
-    await T.enumerate_modules(sid)
-    # enumerate_modules must NOT write anything to @snapshots
-    assert T.SNAPSHOTS.latest_source() is None
 
 
 @pytest.mark.asyncio
@@ -203,17 +167,6 @@ async def test_enumerate_exports_returns_full_list(monkeypatch):
     assert "store" not in doc
     assert "source" not in doc
     assert doc.get("error") is not True
-
-
-@pytest.mark.asyncio
-async def test_enumerate_exports_no_snapshot_side_effect(monkeypatch):
-    sid = new_session_id()
-    T.MANAGER._sessions[sid] = _DummySession()
-    monkeypatch.setattr(memory_mod, "enumerate_exports",
-                        lambda script, module: [{"name": "open"}])
-    await T.enumerate_exports(sid, module="libc.so")
-    found = json.loads(await T.search_capture("@snapshots", text="open", count_only=True))
-    assert found["total"] == 0
 
 
 @pytest.mark.asyncio

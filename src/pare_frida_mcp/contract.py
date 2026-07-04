@@ -8,7 +8,6 @@ CONTRACT_VERSION = 1
 _OBJ = {"type": "object", "properties": {}}
 _BOUNDED_OUT = {"type": "object", "properties": {
     "summary": {"type": "string"},
-    "capture": {"type": "object"},
 }}
 
 
@@ -39,32 +38,24 @@ TOOL_SPECS: list[ToolSpec] = [
              "session_id from earlier in the conversation is still attached.",
              dict(_OBJ)),
     ToolSpec("detach", "medium",
-             "Detach a live session and tear down its capture state. Errors "
-             "only if the session_id is unknown.",
+             "Detach a live session. Errors only if the session_id is unknown.",
              _in(session_id={"type": "string"})),
     ToolSpec("enumerate_processes", "low",
-             "List processes running on a device into the @snapshots store. "
-             "Device-scoped: needs no attach/session - pass device_id (or omit "
-             "for the sole USB device). Returns a source key; read results with "
-             "search_capture(session_id='@snapshots', field='source', contains=<key>).",
+             "List processes running on a device. Device-scoped: needs no "
+             "attach/session — pass device_id (or omit for the sole USB device). "
+             "Returns the full process list.",
              _in(device_id={"type": "string"})),
     ToolSpec("enumerate_applications", "low",
-             "List installed apps/packages on a device into the @snapshots store. "
-             "Device-scoped: no attach needed. 'identifier' is the package name. "
-             "Returns a source key; read with search_capture(session_id='@snapshots', "
-             "field='source', contains=<key>).",
+             "List installed apps/packages on a device. Device-scoped: no attach "
+             "needed. 'identifier' is the package name. Returns the full application list.",
              _in(device_id={"type": "string"})),
     ToolSpec("enumerate_modules", "low",
-             "List modules loaded in an ATTACHED process into the @snapshots "
-             "store (requires session_id from attach). Returns a source key; "
-             "view the full list with /snapshot, or narrow with "
-             "search_capture(session_id='@snapshots', text=<lib-or-symbol>).",
+             "List modules loaded in an ATTACHED process (requires session_id "
+             "from attach). Returns the full module list.",
              _in(session_id={"type": "string"})),
     ToolSpec("enumerate_exports", "low",
-             "List a module's exports in an ATTACHED process into the "
-             "@snapshots store (requires session_id from attach). Returns a "
-             "source key; view with /snapshot or narrow with "
-             "search_capture(session_id='@snapshots', text=<symbol>).",
+             "List a module's exports in an ATTACHED process (requires session_id "
+             "from attach). Returns the full export list.",
              _in(session_id={"type": "string"}, module={"type": "string"})),
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),
@@ -82,29 +73,6 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("write_memory", "high", "Write bytes to target memory.",
              _in(session_id={"type": "string"}, address={"type": "string"},
                  bytes={"type": "string"})),
-    ToolSpec("search_capture", "low",
-             "Search captured events for a session, or device snapshots via the "
-             "reserved handle '@snapshots'. Returns lean, byte-bounded matches "
-             "and the true total. Use count_only=true to get just the count, "
-             "limit=N to peek at a spread sample of N rows, and a more specific "
-             "text= to narrow; read_capture(seq) for one full record.",
-             _in(session_id={"type": "string"}, field={"type": "string"},
-                 contains={"type": "string"}, text={"type": "string"},
-                 byte_budget={"type": "integer"}, limit={"type": "integer"},
-                 count_only={"type": "boolean"})),
-    ToolSpec("read_capture", "low", "Read a captured record slice for a session, or a device snapshot record via the reserved handle '@snapshots'.",
-             _in(session_id={"type": "string"}, seq={"type": "integer"},
-                 offset={"type": "integer"}, byte_budget={"type": "integer"})),
-    ToolSpec("page_capture", "low",
-             "Read ALL rows of a snapshot from a capture store (COMPLETE, not "
-             "sampled) for human display via the /snapshot command. "
-             "session_id='@snapshots'; omit source for the latest snapshot, or "
-             "pass source=<key> with field='summary', contains=<substring> to "
-             "filter; list_sources=true returns the catalog. Models should use "
-             "search_capture instead (this returns unbounded output).",
-             _in(session_id={"type": "string"}, source={"type": "string"},
-                 field={"type": "string"}, contains={"type": "string"},
-                 list_sources={"type": "boolean"})),
 ]
 
 

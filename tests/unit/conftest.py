@@ -19,17 +19,6 @@ if "frida" not in sys.modules:
 
 
 @pytest.fixture(autouse=True)
-def _fresh_snapshots():
-    """Rebind the process-global snapshot store to a clean instance per test so
-    rows written by one test can't leak into another's @snapshots queries."""
-    import pare_frida_mcp.tools as tools_mod
-    from pare_frida_mcp.core.snapshots import SnapshotStore
-
-    tools_mod.SNAPSHOTS = SnapshotStore()
-    yield
-
-
-@pytest.fixture(autouse=True)
 def _fresh_manager():
     """Rebind the process-global SessionManager to a clean instance per test so
     sessions injected by one test can't leak into another."""

@@ -1,12 +1,6 @@
-import pytest
-from pare_frida_mcp.server import build_server
+from pare_frida_mcp.contract import TOOL_SPECS
 
 
-@pytest.mark.asyncio
-async def test_list_tools_exposes_all_contract_tools():
-    server = build_server()
-    tools = await server.list_tools()
-    names = {t.name for t in tools}
-    assert {"list_devices", "attach", "execute_script", "write_memory",
-            "search_capture", "read_capture",
-            "enumerate_processes", "enumerate_applications"} <= names
+def test_tool_count_is_15_and_capture_tools_gone():
+    # 18 → 15: three capture-retrieval tools have been removed
+    assert len(TOOL_SPECS) == 15

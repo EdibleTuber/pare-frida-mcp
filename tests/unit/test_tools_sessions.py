@@ -3,7 +3,6 @@ import json
 import pytest
 
 from pare_frida_mcp import tools as T
-from pare_frida_mcp.capture.store import CaptureStore
 from pare_frida_mcp.ids import new_session_id
 
 
@@ -25,7 +24,6 @@ class _FakeSession:
         self.pid = pid
         self.name = name
         self.frida_session = fs
-        self.store = CaptureStore.open_memory()
         self.flushed = False
 
     def flush(self):
