@@ -54,16 +54,17 @@ async def test_read_memory_small_region_full_hex_inline(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_execute_script_returns_result_inline(monkeypatch):
-    """execute_script returns {"summary": "eval complete", "result": ...} with no spill."""
+    """execute_script returns the script's sends inline (uncapped, no spill)."""
     sid = new_session_id()
     T.MANAGER._sessions[sid] = _DummySession()
     large_value = "x" * 10000  # larger than old _CAP, now returns inline
-    monkeypatch.setattr(scripts_mod, "execute_ad_hoc", lambda fsess, src: large_value)
+    monkeypatch.setattr(scripts_mod, "execute_ad_hoc",
+                        lambda fsess, src: {"sends": [large_value], "logs": [], "error": None})
     try:
         doc = json.loads(await T.execute_script(sid, "1+1"))
-        assert doc.get("error") is not True, doc
-        assert doc["summary"] == "eval complete"
-        assert doc["result"] == large_value
+        assert doc.get("error") in (None,), doc
+        assert doc["summary"].startswith("eval complete")
+        assert doc["sends"] == [large_value]
         assert "capture" not in doc
     finally:
         T.MANAGER._sessions.pop(sid, None)
