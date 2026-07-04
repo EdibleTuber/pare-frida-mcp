@@ -139,8 +139,12 @@ async def execute_script(session_id: str, source: str) -> str:
     try:
         sid = validate_session_id(session_id)
         s = MANAGER.get(sid)
-        value = scripts_mod.execute_ad_hoc(s.frida_session, source)
-        return _ok("eval complete", result=value)
+        res = scripts_mod.execute_ad_hoc(s.frida_session, source)
+        if res["error"]:
+            return _ok(f"script error: {res['error']}",
+                       sends=res["sends"], logs=res["logs"], error=res["error"])
+        return _ok(f"eval complete: {len(res['sends'])} send(s), {len(res['logs'])} log(s)",
+                   sends=res["sends"], logs=res["logs"], error=None)
     except Exception as e:
         return _err("execute_script failed", e)
 
