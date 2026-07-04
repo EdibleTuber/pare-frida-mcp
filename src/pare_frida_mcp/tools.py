@@ -133,6 +133,16 @@ async def enumerate_exports(session_id: str, module: str) -> str:
         return _err("enumerate_exports failed", e)
 
 
+async def enumerate_classes(session_id: str, filter: str = "") -> str:
+    try:
+        sid = validate_session_id(session_id)
+        s = MANAGER.get(sid)
+        rows = java_mod.enumerate_classes(s.script, filter)
+        return _ok(f"{len(rows)} classes", classes=rows)
+    except Exception as e:
+        return _err("enumerate_classes failed", e)
+
+
 async def load_script(session_id: str, name: str = "") -> str:
     # v1: bundled script is loaded on attach; this tool reports current state.
     try:

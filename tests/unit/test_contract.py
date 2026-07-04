@@ -26,6 +26,6 @@ def test_adapter_matches_agent_core_shape():
     for t in tools:
         assert {"name", "risk_tier", "input_schema", "output_schema"} <= set(t)
 
-def test_tool_count_is_15():
-    # 18 tools → 15: the three capture-retrieval tools have been removed
-    assert len(TOOL_SPECS) == 15
+def test_tool_count_is_16():
+    # 18 → 15 (capture-retrieval tools removed) → 16 (+ enumerate_classes)
+    assert len(TOOL_SPECS) == 16
