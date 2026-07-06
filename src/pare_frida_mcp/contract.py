@@ -94,6 +94,18 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("java_hook_remove", "low", "Remove a previously installed Java method hook.",
              _in(session_id={"type": "string"}, cls={"type": "string"},
                  method={"type": "string"}, overload={"type": "string"})),
+    ToolSpec("read_hook_events", "low",
+             "Read buffered java_hook events for a session (non-destructive). "
+             "Pass since_seq = the last seq you saw (0 first time); returns "
+             "events with seq > since_seq, decoded args + return value. "
+             "has_more + next_seq means call again with since_seq=next_seq to "
+             "page the rest; lost>0 means old events were evicted (read more "
+             "often / raise the buffer). An EMPTY result means the hooked action "
+             "has not been triggered yet - retry after the app action, do not "
+             "remove the hook. Tier low: the sensitive act (choosing what to "
+             "capture) was already gated at java_hook.",
+             _in(since_seq={"type": "integer"}, limit={"type": "integer"},
+                 session_id={"type": "string"})),
     ToolSpec("read_memory", "high", "Read target memory (hex preview).",
              _in(session_id={"type": "string"}, address={"type": "string"},
                  size={"type": "integer"})),
