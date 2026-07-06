@@ -29,7 +29,7 @@ async def test_enumerate_classes_returns_envelope(monkeypatch):
     classes = ["a.B", "a.C", "a.D"]
     monkeypatch.setattr(java_mod, "enumerate_classes", lambda script, filter: classes)
     try:
-        doc = json.loads(await T.enumerate_classes(sid, "a"))
+        doc = json.loads(await T.enumerate_classes(filter="a", session_id=sid))
         assert doc.get("error") is not True, doc
         assert doc["classes"] == classes
         assert doc["summary"] == "3 classes"
@@ -39,7 +39,7 @@ async def test_enumerate_classes_returns_envelope(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_enumerate_classes_no_live_session_errors():
-    res = json.loads(await T.enumerate_classes(new_session_id(), ""))
+    res = json.loads(await T.enumerate_classes(filter="", session_id=new_session_id()))
     assert res.get("error") is True
 
 
@@ -57,7 +57,7 @@ async def test_enumerate_methods_returns_envelope(monkeypatch):
     ]
     monkeypatch.setattr(java_mod, "enumerate_methods", lambda script, cls: methods)
     try:
-        doc = json.loads(await T.enumerate_methods(sid, "a.C"))
+        doc = json.loads(await T.enumerate_methods(cls="a.C", session_id=sid))
         assert doc.get("error") is not True, doc
         assert doc["methods"] == methods
         assert doc["summary"] == "2 methods for a.C"
@@ -67,7 +67,7 @@ async def test_enumerate_methods_returns_envelope(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_enumerate_methods_no_live_session_errors():
-    res = json.loads(await T.enumerate_methods(new_session_id(), "a.C"))
+    res = json.loads(await T.enumerate_methods(cls="a.C", session_id=new_session_id()))
     assert res.get("error") is True
 
 

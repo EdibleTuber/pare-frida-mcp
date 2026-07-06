@@ -47,6 +47,22 @@ class SessionManager:
     def get(self, session_id: str) -> Session:
         return self._sessions[session_id]
 
+    def active_session(self) -> str | None:
+        """Id of the most-recent LIVE session, or None.
+
+        Lets session-scoped tools default an omitted session_id to "the session
+        I just attached", so the operator/model never has to restate it. Uses the
+        same is_detached liveness probe as list_sessions; dead sessions are
+        skipped even if more recent. _sessions preserves insertion order, so the
+        last-registered live session wins.
+        """
+        for sid in reversed(self._sessions):
+            fs = self._sessions[sid].frida_session
+            detached = True if fs is None else bool(getattr(fs, "is_detached", True))
+            if not detached:
+                return sid
+        return None
+
     def find_live_session(self, pid: int, device_id: str | None = None) -> str | None:
         """Return the id of a LIVE session for this (device, pid), or None.
 

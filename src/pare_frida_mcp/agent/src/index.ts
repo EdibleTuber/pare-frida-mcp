@@ -2,8 +2,9 @@ import Java from "frida-java-bridge";
 
 rpc.exports = {
   modules(filter?: string) {
+    const needle = (filter ?? "").toLowerCase();
     return Process.enumerateModules()
-      .filter(m => !filter || m.name.includes(filter))
+      .filter(m => !needle || m.name.toLowerCase().includes(needle))
       .map(m => ({ name: m.name, base: m.base.toString(), size: m.size }));
   },
   exports(moduleName: string) {
@@ -11,10 +12,16 @@ rpc.exports = {
       .map(e => ({ name: e.name, address: e.address.toString() }));
   },
   javaEnumerate(filter: string) {
+    // Case-insensitive substring match: the app's Java package (e.g.
+    // sg.vp.owasp_mobile.OMTG_Android) is often cased differently from the
+    // application id operators paste in from `/apps`
+    // (sg.vp.owasp_mobile.omtg_android). A case-sensitive filter silently
+    // returned 0 for the natural filter, so match case-insensitively.
+    const needle = (filter ?? "").toLowerCase();
     const out: string[] = [];
     Java.perform(() => {
       Java.enumerateLoadedClassesSync()
-        .filter(c => c.includes(filter))
+        .filter(c => c.toLowerCase().includes(needle))
         .slice(0, 500)
         .forEach(c => out.push(c));
     });

@@ -50,28 +50,43 @@ TOOL_SPECS: list[ToolSpec] = [
              "needed. 'identifier' is the package name. Returns the full application list.",
              _in(device_id={"type": "string"})),
     ToolSpec("enumerate_modules", "low",
-             "List modules loaded in an ATTACHED process (requires session_id "
-             "from attach). Returns the full module list.",
+             "List modules loaded in an ATTACHED process. Returns the full module "
+             "list. Omit session_id to target the most-recent live session.",
              _in(session_id={"type": "string"})),
     ToolSpec("enumerate_exports", "low",
-             "List a module's exports in an ATTACHED process (requires session_id "
-             "from attach). Returns the full export list.",
+             "List a module's exports in an ATTACHED process. Returns the full "
+             "export list. Omit session_id to target the most-recent live session.",
              _in(session_id={"type": "string"}, module={"type": "string"})),
     ToolSpec("enumerate_classes", "low",
-             "List LOADED Java classes in an ATTACHED process (requires session_id "
-             "from attach), filtered by substring. Classes load lazily - navigate "
-             "into the screen/activity you care about first, then enumerate. "
-             "Returns the loaded class list (capped at 500).",
+             "List LOADED Java classes in an ATTACHED process, filtered by "
+             "CASE-INSENSITIVE substring. The filter matches the loaded Java "
+             "PACKAGE, which can differ (including case) from the application id "
+             "shown by enumerate_applications / '/apps' - e.g. app id "
+             "'sg.vp.owasp_mobile.omtg_android' vs class package "
+             "'sg.vp.owasp_mobile.OMTG_Android'. When unsure, filter on a short "
+             "distinctive token. Classes load lazily - navigate into the "
+             "screen/activity you care about first, then enumerate. Returns the "
+             "loaded class list (capped at 500; the summary flags when capped - "
+             "refine the filter). Omit session_id to target the most-recent live "
+             "session.",
              _in(session_id={"type": "string"}, filter={"type": "string"})),
     ToolSpec("enumerate_methods", "low",
-             "List a Java class's DECLARED methods in an ATTACHED process "
-             "(requires session_id). Declared-only (excludes inherited framework "
-             "methods). Returns {name, signature} per method; signature carries "
-             "parameter types for java_hook overload resolution.",
+             "List a Java class's DECLARED methods in an ATTACHED process. "
+             "Declared-only (excludes inherited framework methods). Returns "
+             "{name, signature} per method; signature carries parameter types for "
+             "java_hook overload resolution. Omit session_id to target the "
+             "most-recent live session.",
              _in(session_id={"type": "string"}, cls={"type": "string"})),
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),
-    ToolSpec("execute_script", "critical", "Evaluate arbitrary JS in a session.",
+    ToolSpec("execute_script", "critical",
+             "Evaluate arbitrary JS in an attached session. NATIVE / Process / "
+             "Memory escape hatch ONLY: this ad-hoc script has NO Java (or ObjC) "
+             "bridge - Frida 17 removed the `Java` global, so any script "
+             "referencing `Java` fails with 'Java is not defined'. For Java work "
+             "use enumerate_classes / enumerate_methods / java_hook instead, which "
+             "run in the bundled agent that DOES load the bridge. Omit session_id "
+             "to target the most-recent live session.",
              _in(session_id={"type": "string"}, source={"type": "string"})),
     ToolSpec("java_hook", "high", "Install an observing Java method hook.",
              _in(session_id={"type": "string"}, cls={"type": "string"},

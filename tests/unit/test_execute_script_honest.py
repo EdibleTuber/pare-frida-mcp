@@ -107,7 +107,7 @@ async def test_execute_script_tool_surfaces_error_in_summary(monkeypatch):
     monkeypatch.setattr(scripts_mod, "execute_ad_hoc", lambda fsess, src: {
         "sends": [], "logs": [], "error": "ReferenceError: 'Java' is not defined"})
     try:
-        doc = json.loads(await T.execute_script(sid, "Java.perform(()=>{})"))
+        doc = json.loads(await T.execute_script(source="Java.perform(()=>{})", session_id=sid))
         assert "Java" in doc["summary"]                 # error is visible, not a silent null
         assert doc["error"] == "ReferenceError: 'Java' is not defined"
         assert "result" not in doc                       # old scalar key gone
@@ -122,7 +122,7 @@ async def test_execute_script_tool_success_lists_sends_and_logs(monkeypatch):
     monkeypatch.setattr(scripts_mod, "execute_ad_hoc", lambda fsess, src: {
         "sends": [{"classes": ["A", "B"]}], "logs": ["trace"], "error": None})
     try:
-        doc = json.loads(await T.execute_script(sid, "send({classes:['A','B']})"))
+        doc = json.loads(await T.execute_script(source="send({classes:['A','B']})", session_id=sid))
         assert doc.get("error") in (None, False) or doc["error"] is None
         assert doc["summary"].startswith("eval complete")
         assert doc["sends"] == [{"classes": ["A", "B"]}]

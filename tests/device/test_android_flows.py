@@ -21,7 +21,7 @@ async def test_attach_enumerate_read(system_server_pid):
         # Find libc directly in the returned list
         libc = next((m for m in mods["modules"] if "libc" in m["name"]), None)
         assert libc is not None, mods
-        mem = json.loads(await T.read_memory(sid, address=libc["base"], size=16))
+        mem = json.loads(await T.read_memory(address=libc["base"], size=16, session_id=sid))
         assert mem.get("hex"), mem
     finally:
         # Detach via the underlying frida session to free emulator resources.
@@ -33,7 +33,7 @@ async def test_java_hook_install(system_server_pid):
     res = json.loads(await T.attach(target=str(system_server_pid)))
     sid = res["session_id"]
     try:
-        hook = json.loads(await T.java_hook(sid, cls="java.lang.System", method="currentTimeMillis"))
+        hook = json.loads(await T.java_hook(cls="java.lang.System", method="currentTimeMillis", session_id=sid))
         assert hook.get("hook"), hook
     finally:
         T.MANAGER.get(sid).frida_session.detach()
