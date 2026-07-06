@@ -25,6 +25,7 @@ function utf8JS(v: any, n: number): string | null {
     else return null;
     if (i + len > n) return null;
     for (let k = 1; k < len; k++) { const bk = v[i + k] & 0xff; if (bk < 0x80 || bk > 0xbf) return null; cp = (cp << 6) | (bk & 0x3f); }
+    if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return null;
     out += String.fromCodePoint(cp); i += len;
   }
   return out;
