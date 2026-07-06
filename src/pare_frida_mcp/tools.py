@@ -192,19 +192,26 @@ async def execute_script(source: str, session_id: str = "") -> str:
         return _err("execute_script failed", e)
 
 
-async def java_hook(cls: str, method: str, overload: str = "", session_id: str = "") -> str:
+async def java_hook(cls: str, method: str, overload: list | None = None,
+                    session_id: str = "") -> str:
     try:
         s = _resolve_session(session_id)
-        res = java_mod.java_hook(s.script, cls, method, overload or None)
+        res = java_mod.java_hook(s.script, cls, method, overload)
+        if isinstance(res, dict) and res.get("ambiguous"):
+            return json.dumps({
+                "summary": f"{cls}.{method} is overloaded - retry java_hook with "
+                           f"'overload' set to one of these descriptor lists",
+                "error": True, "overloads": res.get("overloads", [])})
         return _ok(f"hook installed: {cls}.{method}", hook=res)
     except Exception as e:
         return _err("java_hook failed", e)
 
 
-async def java_hook_remove(cls: str, method: str, overload: str = "", session_id: str = "") -> str:
+async def java_hook_remove(cls: str, method: str, overload: list | None = None,
+                           session_id: str = "") -> str:
     try:
         s = _resolve_session(session_id)
-        res = s.script.exports_sync.java_hook_remove(cls, method, overload or "")
+        res = s.script.exports_sync.java_hook_remove(cls, method, overload or [])
         return _ok(f"hook removed: {cls}.{method}", removed=res)
     except Exception as e:
         return _err("java_hook_remove failed", e)
