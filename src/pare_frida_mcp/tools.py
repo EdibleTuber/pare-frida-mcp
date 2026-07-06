@@ -14,6 +14,7 @@ from pare_frida_mcp.ids import validate_session_id
 CFG = load_config()
 MANAGER = SessionManager(CFG)
 _CAP = CFG.max_tool_bytes
+_CLASS_CAP = 500  # mirrors the slice(0, 500) in agent/src/index.ts javaEnumerate
 
 
 def _ok(summary: str, **extra: Any) -> str:
@@ -27,6 +28,19 @@ def _err(summary: str, exc: Exception | None = None) -> str:
     if exc is not None:
         payload["detail"] = str(exc)
     return json.dumps(payload)
+
+
+def _resolve_session(session_id: str) -> Session:
+    """Return the target Session. When session_id is given, validate + look it up;
+    when omitted, fall back to the most-recent live session so the caller needn't
+    restate the id it just got from attach. Raises with an attach hint when
+    nothing is live."""
+    if session_id:
+        return MANAGER.get(validate_session_id(session_id))
+    active = MANAGER.active_session()
+    if active is None:
+        raise LookupError("no session_id given and no live session - attach first")
+    return MANAGER.get(active)
 
 
 async def list_devices() -> str:
@@ -113,60 +127,55 @@ async def enumerate_applications(device_id: str = "") -> str:
         return _err("enumerate_applications failed", e)
 
 
-async def enumerate_modules(session_id: str) -> str:
+async def enumerate_modules(session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         mods = memory_mod.enumerate_modules(s.script)
         return _ok(f"{len(mods)} modules", modules=mods)
     except Exception as e:
         return _err("enumerate_modules failed", e)
 
 
-async def enumerate_exports(session_id: str, module: str) -> str:
+async def enumerate_exports(module: str, session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         exps = memory_mod.enumerate_exports(s.script, module)
         return _ok(f"{len(exps)} exports for {module}", exports=exps)
     except Exception as e:
         return _err("enumerate_exports failed", e)
 
 
-async def enumerate_classes(session_id: str, filter: str = "") -> str:
+async def enumerate_classes(filter: str = "", session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         rows = java_mod.enumerate_classes(s.script, filter)
-        return _ok(f"{len(rows)} classes", classes=rows)
+        note = " (capped - refine the filter to see more)" if len(rows) >= _CLASS_CAP else ""
+        return _ok(f"{len(rows)} classes{note}", classes=rows)
     except Exception as e:
         return _err("enumerate_classes failed", e)
 
 
-async def enumerate_methods(session_id: str, cls: str) -> str:
+async def enumerate_methods(cls: str, session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         rows = java_mod.enumerate_methods(s.script, cls)
         return _ok(f"{len(rows)} methods for {cls}", methods=rows)
     except Exception as e:
         return _err("enumerate_methods failed", e)
 
 
-async def load_script(session_id: str, name: str = "") -> str:
+async def load_script(name: str = "", session_id: str = "") -> str:
     # v1: bundled script is loaded on attach; this tool reports current state.
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         return _ok("bundled script already loaded at attach", script_id=str(id(s.script)))
     except Exception as e:
         return _err("load_script failed", e)
 
 
-async def execute_script(session_id: str, source: str) -> str:
+async def execute_script(source: str, session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         res = scripts_mod.execute_ad_hoc(s.frida_session, source)
         if res["error"]:
             return _ok(f"script error: {res['error']}",
@@ -177,30 +186,27 @@ async def execute_script(session_id: str, source: str) -> str:
         return _err("execute_script failed", e)
 
 
-async def java_hook(session_id: str, cls: str, method: str, overload: str = "") -> str:
+async def java_hook(cls: str, method: str, overload: str = "", session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         res = java_mod.java_hook(s.script, cls, method, overload or None)
         return _ok(f"hook installed: {cls}.{method}", hook=res)
     except Exception as e:
         return _err("java_hook failed", e)
 
 
-async def java_hook_remove(session_id: str, cls: str, method: str, overload: str = "") -> str:
+async def java_hook_remove(cls: str, method: str, overload: str = "", session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         res = s.script.exports_sync.java_hook_remove(cls, method, overload or "")
         return _ok(f"hook removed: {cls}.{method}", removed=res)
     except Exception as e:
         return _err("java_hook_remove failed", e)
 
 
-async def read_memory(session_id: str, address: str, size: int) -> str:
+async def read_memory(address: str, size: int, session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         data = memory_mod.read_memory(s.script, address, size)
         n = len(data) if data else 0
         return _ok(f"read {n} bytes @ {address}",
@@ -209,10 +215,9 @@ async def read_memory(session_id: str, address: str, size: int) -> str:
         return _err("read_memory failed", e)
 
 
-async def write_memory(session_id: str, address: str, bytes: str) -> str:
+async def write_memory(address: str, bytes: str, session_id: str = "") -> str:
     try:
-        sid = validate_session_id(session_id)
-        s = MANAGER.get(sid)
+        s = _resolve_session(session_id)
         res = memory_mod.write_memory(s.script, address, bytes)
         return _ok(f"wrote {res.get('written', 0)} bytes", address=address)
     except Exception as e:

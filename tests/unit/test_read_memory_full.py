@@ -24,7 +24,7 @@ async def test_read_memory_returns_full_hex_no_handle(monkeypatch):
     data = bytes(range(256)) * 40  # 10 240 bytes
     monkeypatch.setattr(memory_mod, "read_memory", lambda script, addr, size: data)
     try:
-        out = await T.read_memory(sid, "0x401000", len(data))
+        out = await T.read_memory(address="0x401000", size=len(data), session_id=sid)
         doc = json.loads(out)
         assert doc.get("error") is not True, doc
         assert doc["address"] == "0x401000"
@@ -44,7 +44,7 @@ async def test_read_memory_small_region_full_hex_inline(monkeypatch):
     data = bytes(range(16))
     monkeypatch.setattr(memory_mod, "read_memory", lambda script, addr, size: data)
     try:
-        doc = json.loads(await T.read_memory(sid, "0x10", 16))
+        doc = json.loads(await T.read_memory(address="0x10", size=16, session_id=sid))
         assert doc["hex"] == data.hex()
         assert "capture" not in doc
         assert "hex_preview" not in doc
@@ -61,7 +61,7 @@ async def test_execute_script_returns_result_inline(monkeypatch):
     monkeypatch.setattr(scripts_mod, "execute_ad_hoc",
                         lambda fsess, src: {"sends": [large_value], "logs": [], "error": None})
     try:
-        doc = json.loads(await T.execute_script(sid, "1+1"))
+        doc = json.loads(await T.execute_script(source="1+1", session_id=sid))
         assert doc.get("error") in (None,), doc
         assert doc["summary"].startswith("eval complete")
         assert doc["sends"] == [large_value]

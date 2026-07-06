@@ -29,3 +29,17 @@ def test_adapter_matches_agent_core_shape():
 def test_tool_count_is_17():
     # 18 → 15 (capture-retrieval tools removed) → 17 (+ enumerate_classes/methods)
     assert len(TOOL_SPECS) == 17
+
+def test_execute_script_description_warns_no_java_bridge():
+    # The bare ad-hoc script has no Java bridge (Frida 17 removed the global);
+    # the tool spec must steer the model to the Java tools instead of writing
+    # `Java.*` into execute_script and hitting "Java is not defined".
+    desc = {s.name: s for s in TOOL_SPECS}["execute_script"].description.lower()
+    assert "java" in desc and "bridge" in desc
+    assert "enumerate_classes" in desc
+
+def test_enumerate_classes_description_notes_case_insensitive_package():
+    # Filter matches the loaded Java package, which can differ (incl. case) from
+    # the application id shown in /apps; matching is case-insensitive.
+    desc = {s.name: s for s in TOOL_SPECS}["enumerate_classes"].description.lower()
+    assert "case-insensitive" in desc

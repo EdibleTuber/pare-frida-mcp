@@ -160,7 +160,7 @@ async def test_enumerate_exports_returns_full_list(monkeypatch):
     T.MANAGER._sessions[sid] = _DummySession()
     exps = [{"name": f"sym{i}", "address": hex(i)} for i in range(3)]
     monkeypatch.setattr(memory_mod, "enumerate_exports", lambda script, module: exps)
-    doc = json.loads(await T.enumerate_exports(sid, module="libc.so"))
+    doc = json.loads(await T.enumerate_exports(module="libc.so", session_id=sid))
     assert "exports" in doc
     assert doc["exports"] == exps
     assert "3 exports for libc.so" in doc["summary"]
@@ -172,7 +172,7 @@ async def test_enumerate_exports_returns_full_list(monkeypatch):
 @pytest.mark.asyncio
 async def test_enumerate_exports_no_live_session_errors():
     sid = new_session_id()
-    res = json.loads(await T.enumerate_exports(sid, module="libc.so"))
+    res = json.loads(await T.enumerate_exports(module="libc.so", session_id=sid))
     assert res.get("error") is True
 
 
@@ -182,6 +182,6 @@ async def test_enumerate_exports_module_in_summary(monkeypatch):
     T.MANAGER._sessions[sid] = _DummySession()
     monkeypatch.setattr(memory_mod, "enumerate_exports",
                         lambda script, module: [{"name": "malloc"}])
-    doc = json.loads(await T.enumerate_exports(sid, module="libm.so"))
+    doc = json.loads(await T.enumerate_exports(module="libm.so", session_id=sid))
     assert "libm.so" in doc["summary"]
     assert doc["exports"][0]["name"] == "malloc"
