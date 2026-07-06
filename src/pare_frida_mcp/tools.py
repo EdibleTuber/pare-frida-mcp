@@ -16,7 +16,7 @@ MANAGER = SessionManager(CFG)
 _CAP = CFG.max_tool_bytes
 _CLASS_CAP = 500  # mirrors the slice(0, 500) in agent/src/index.ts javaEnumerate
 _EVENT_LIMIT_MAX = 500
-_EVENT_WIRE_BUDGET = 3072   # below host max_tool_bytes so a normal read never trips the stub
+_EVENT_WIRE_BUDGET = min(3072, CFG.max_tool_bytes - 512)   # stay below the host wire cap
 
 
 def _clamp(v: int, lo: int, hi: int) -> int:
@@ -221,12 +221,13 @@ async def read_hook_events(since_seq: int = 0, limit: int = 100,
                            session_id: str = "") -> str:
     try:
         s = _resolve_session(session_id)
-        r = MANAGER.read_events(s.id, since_seq=max(0, since_seq),
+        sseq = max(0, since_seq)
+        r = MANAGER.read_events(s.id, since_seq=sseq,
                                 limit=_clamp(limit, 1, _EVENT_LIMIT_MAX),
                                 max_bytes=_EVENT_WIRE_BUDGET)
         note = ""
         if r.lost:
-            note += f"; {r.lost} evicted before seq {since_seq} - read more often"
+            note += f"; {r.lost} evicted before seq {sseq} - read more often"
         if r.has_more:
             note += (f"; {r.buffered_remaining} more - call again with "
                      f"since_seq={r.next_seq}")

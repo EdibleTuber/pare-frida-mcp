@@ -50,3 +50,18 @@ async def test_limit_is_clamped():
 async def test_no_live_session_errors_with_attach_hint():
     res = json.loads(await T.read_hook_events())
     assert res["error"] is True and "attach" in json.dumps(res).lower()
+
+
+@pytest.mark.asyncio
+async def test_limit_zero_clamped_to_one():
+    sid = _live_session_with_events(3)
+    res = json.loads(await T.read_hook_events(limit=0, session_id=sid))
+    assert res.get("error") is not True and len(res["events"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_negative_since_seq_floored_to_zero():
+    sid = _live_session_with_events(3)
+    res = json.loads(await T.read_hook_events(since_seq=-5, session_id=sid))
+    assert res.get("error") is not True
+    assert [e["seq"] for e in res["events"]] == [1, 2, 3]
