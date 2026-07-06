@@ -11,6 +11,15 @@ from pare_frida_mcp.ids import new_session_id
 _DIAGNOSTIC_BOUND = 256
 
 
+@dataclass
+class ReadResult:
+    events: list[dict]
+    next_seq: int
+    buffered_remaining: int
+    has_more: bool
+    lost: int
+
+
 class Session:
     def __init__(self, session_id: str, script: Any, pid: int, name: str,
                  event_bound: int, device_id: str | None = None):
@@ -121,6 +130,36 @@ class SessionManager:
 
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()
+
+    def read_events(self, session_id: str, since_seq: int, limit: int,
+                    max_bytes: int) -> ReadResult:
+        """Non-destructive cursor read of hook events with seq > since_seq.
+
+        Idempotent: reading never evicts. Stops at whichever bound (limit or
+        max_bytes) is hit first, always returning at least one event when any
+        qualify. `lost` counts events evicted below the cursor (the ring moved
+        past since_seq) - the only true-loss signal, derived here race-free.
+        """
+        buf = list(self._sessions[session_id]._events)   # seq-ascending
+        lost = 0
+        if buf and since_seq < buf[0]["seq"] - 1:
+            lost = buf[0]["seq"] - 1 - since_seq
+        candidates = [e for e in buf if e["seq"] > since_seq]
+        selected: list[dict] = []
+        size = 0
+        for e in candidates:
+            if len(selected) >= limit:
+                break
+            esize = len(json.dumps(e))
+            if selected and size + esize > max_bytes:
+                break
+            selected.append(e)
+            size += esize
+        next_seq = selected[-1]["seq"] if selected else since_seq
+        remaining = len(candidates) - len(selected)
+        return ReadResult(events=selected, next_seq=next_seq,
+                          buffered_remaining=remaining, has_more=remaining > 0,
+                          lost=lost)
 
     def close_all(self) -> None:
         for s in self._sessions.values():
