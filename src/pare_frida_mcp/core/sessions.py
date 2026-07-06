@@ -1,46 +1,64 @@
 from __future__ import annotations
 
+import json
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 from pare_frida_mcp.config import Config
 from pare_frida_mcp.ids import new_session_id
 
+_DIAGNOSTIC_BOUND = 256
+
+
+@dataclass
+class ReadResult:
+    events: list[dict]
+    next_seq: int
+    buffered_remaining: int
+    has_more: bool
+    lost: int
+
 
 class Session:
     def __init__(self, session_id: str, script: Any, pid: int, name: str,
-                 queue_bound: int, device_id: str | None = None):
+                 event_bound: int, device_id: str | None = None):
         self.id = session_id
         self.script = script
         self.pid = pid
         self.name = name
         self.device_id = device_id
-        self._queue: deque[dict] = deque()
-        self._queue_bound = queue_bound
-        self.dropped = 0
+        self._events: deque[dict] = deque(maxlen=event_bound)          # hook events, seq-ascending
+        self._diagnostics: deque[dict] = deque(maxlen=_DIAGNOSTIC_BOUND)  # frida errors/logs/non-hook
         self.frida_session = None
         script.on("message", self._on_message)
 
     def _on_message(self, message: dict, data: Any) -> None:
-        if len(self._queue) >= self._queue_bound:
-            self.dropped += 1
-            return
-        self._queue.append(message)
+        if message.get("type") == "send":
+            payload = message.get("payload")
+            if isinstance(payload, dict) and payload.get("hook"):
+                self._events.append(payload)
+                return
+        self._diagnostics.append(message)
 
     def flush(self) -> None:
-        self._queue.clear()
+        self._events.clear()
+        self._diagnostics.clear()
 
 
 class SessionManager:
-    def __init__(self, config: Config, queue_bound: int = 10000):
+    def __init__(self, config: Config, event_bound: int = 2048):
+        # event_bound sized for enriched events (each up to ~CAP bytes hex + utf8);
+        # worst-case resident memory ~= event_bound * per-event-max. NOT the old
+        # 10000 thin-message default.
         self._config = config
-        self._queue_bound = queue_bound
+        self._event_bound = event_bound
         self._sessions: dict[str, Session] = {}
 
     def register_session(self, *, script: Any, pid: int, name: str,
                          device_id: str | None = None) -> str:
         sid = new_session_id()
-        self._sessions[sid] = Session(sid, script, pid, name, self._queue_bound,
+        self._sessions[sid] = Session(sid, script, pid, name, self._event_bound,
                                       device_id)
         return sid
 
@@ -113,8 +131,35 @@ class SessionManager:
     def flush(self, session_id: str) -> None:
         self._sessions[session_id].flush()
 
-    def dropped_count(self, session_id: str) -> int:
-        return self._sessions[session_id].dropped
+    def read_events(self, session_id: str, since_seq: int, limit: int,
+                    max_bytes: int) -> ReadResult:
+        """Non-destructive cursor read of hook events with seq > since_seq.
+
+        Idempotent: reading never evicts. Stops at whichever bound (limit or
+        max_bytes) is hit first, always returning at least one event when any
+        qualify. `lost` counts events evicted below the cursor (the ring moved
+        past since_seq) - the only true-loss signal, derived here race-free.
+        """
+        buf = list(self._sessions[session_id]._events)   # seq-ascending
+        lost = 0
+        if buf and since_seq < buf[0]["seq"] - 1:
+            lost = buf[0]["seq"] - 1 - since_seq
+        candidates = [e for e in buf if e["seq"] > since_seq]
+        selected: list[dict] = []
+        size = 0
+        for e in candidates:
+            if len(selected) >= limit:
+                break
+            esize = len(json.dumps(e))
+            if selected and size + esize > max_bytes:
+                break
+            selected.append(e)
+            size += esize
+        next_seq = selected[-1]["seq"] if selected else since_seq
+        remaining = len(candidates) - len(selected)
+        return ReadResult(events=selected, next_seq=next_seq,
+                          buffered_remaining=remaining, has_more=remaining > 0,
+                          lost=lost)
 
     def close_all(self) -> None:
         for s in self._sessions.values():

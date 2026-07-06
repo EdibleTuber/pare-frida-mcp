@@ -88,12 +88,37 @@ TOOL_SPECS: list[ToolSpec] = [
              "run in the bundled agent that DOES load the bridge. Omit session_id "
              "to target the most-recent live session.",
              _in(session_id={"type": "string"}, source={"type": "string"})),
-    ToolSpec("java_hook", "high", "Install an observing Java method hook.",
+    ToolSpec("java_hook", "high",
+             "Install an OBSERVING Java method hook (captures decoded arguments "
+             "AND the return value; the original still runs). Works on app and "
+             "framework classes. 'overload' is an ordered list of frida type "
+             "descriptors, one per parameter (e.g. [\"[B\",\"int\",\"int\"]); "
+             "omit it for a non-overloaded method - if the method is overloaded "
+             "the call returns the available descriptor lists to choose from. "
+             "Read what the hook captured with read_hook_events (start at the "
+             "since_seq this call returns). WARNING: hooking an ultra-hot method "
+             "(e.g. String.<init>) floods the buffer; a per-thread guard prevents "
+             "recursion but the signal will be noisy.",
              _in(session_id={"type": "string"}, cls={"type": "string"},
-                 method={"type": "string"}, overload={"type": "string"})),
-    ToolSpec("java_hook_remove", "low", "Remove a previously installed Java method hook.",
+                 method={"type": "string"},
+                 overload={"type": "array", "items": {"type": "string"}})),
+    ToolSpec("java_hook_remove", "low", "Remove a previously installed Java method "
+             "hook. 'overload' is the same descriptor list used to install it.",
              _in(session_id={"type": "string"}, cls={"type": "string"},
-                 method={"type": "string"}, overload={"type": "string"})),
+                 method={"type": "string"},
+                 overload={"type": "array", "items": {"type": "string"}})),
+    ToolSpec("read_hook_events", "low",
+             "Read buffered java_hook events for a session (non-destructive). "
+             "Pass since_seq = the last seq you saw (0 first time); returns "
+             "events with seq > since_seq, decoded args + return value. "
+             "has_more + next_seq means call again with since_seq=next_seq to "
+             "page the rest; lost>0 means old events were evicted (read more "
+             "often / raise the buffer). An EMPTY result means the hooked action "
+             "has not been triggered yet - retry after the app action, do not "
+             "remove the hook. Tier low: the sensitive act (choosing what to "
+             "capture) was already gated at java_hook.",
+             _in(since_seq={"type": "integer"}, limit={"type": "integer"},
+                 session_id={"type": "string"})),
     ToolSpec("read_memory", "high", "Read target memory (hex preview).",
              _in(session_id={"type": "string"}, address={"type": "string"},
                  size={"type": "integer"})),

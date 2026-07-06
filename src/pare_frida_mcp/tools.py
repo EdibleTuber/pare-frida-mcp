@@ -15,6 +15,12 @@ CFG = load_config()
 MANAGER = SessionManager(CFG)
 _CAP = CFG.max_tool_bytes
 _CLASS_CAP = 500  # mirrors the slice(0, 500) in agent/src/index.ts javaEnumerate
+_EVENT_LIMIT_MAX = 500
+_EVENT_WIRE_BUDGET = min(3072, CFG.max_tool_bytes - 512)   # stay below the host wire cap
+
+
+def _clamp(v: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, v))
 
 
 def _ok(summary: str, **extra: Any) -> str:
@@ -186,22 +192,50 @@ async def execute_script(source: str, session_id: str = "") -> str:
         return _err("execute_script failed", e)
 
 
-async def java_hook(cls: str, method: str, overload: str = "", session_id: str = "") -> str:
+async def java_hook(cls: str, method: str, overload: list | None = None,
+                    session_id: str = "") -> str:
     try:
         s = _resolve_session(session_id)
-        res = java_mod.java_hook(s.script, cls, method, overload or None)
+        res = java_mod.java_hook(s.script, cls, method, overload)
+        if isinstance(res, dict) and res.get("ambiguous"):
+            return json.dumps({
+                "summary": f"{cls}.{method} is overloaded - retry java_hook with "
+                           f"'overload' set to one of these descriptor lists",
+                "error": True, "overloads": res.get("overloads", [])})
         return _ok(f"hook installed: {cls}.{method}", hook=res)
     except Exception as e:
         return _err("java_hook failed", e)
 
 
-async def java_hook_remove(cls: str, method: str, overload: str = "", session_id: str = "") -> str:
+async def java_hook_remove(cls: str, method: str, overload: list | None = None,
+                           session_id: str = "") -> str:
     try:
         s = _resolve_session(session_id)
-        res = s.script.exports_sync.java_hook_remove(cls, method, overload or "")
+        res = s.script.exports_sync.java_hook_remove(cls, method, overload or [])
         return _ok(f"hook removed: {cls}.{method}", removed=res)
     except Exception as e:
         return _err("java_hook_remove failed", e)
+
+
+async def read_hook_events(since_seq: int = 0, limit: int = 100,
+                           session_id: str = "") -> str:
+    try:
+        s = _resolve_session(session_id)
+        sseq = max(0, since_seq)
+        r = MANAGER.read_events(s.id, since_seq=sseq,
+                                limit=_clamp(limit, 1, _EVENT_LIMIT_MAX),
+                                max_bytes=_EVENT_WIRE_BUDGET)
+        note = ""
+        if r.lost:
+            note += f"; {r.lost} evicted before seq {sseq} - read more often"
+        if r.has_more:
+            note += (f"; {r.buffered_remaining} more - call again with "
+                     f"since_seq={r.next_seq}")
+        return _ok(f"{len(r.events)} events{note}", events=r.events,
+                   next_seq=r.next_seq, buffered_remaining=r.buffered_remaining,
+                   has_more=r.has_more, lost=r.lost)
+    except Exception as e:
+        return _err("read_hook_events failed", e)
 
 
 async def read_memory(address: str, size: int, session_id: str = "") -> str:
