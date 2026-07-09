@@ -105,16 +105,24 @@ rpc.exports = {
         : (target.argumentTypes ? target.argumentTypes.map((t: any) => t.className) : []);
       target.implementation = function (...args: any[]) {
         const tid = Process.getCurrentThreadId();
-        if (active.has(tid)) {                                   // re-entrancy guard
+        // Re-entrancy guard is held ONLY while decoding, so describe() can never
+        // recurse into a hooked method. It is deliberately NOT held across
+        // target.apply: a hooked callee invoked by a hooked caller on the same
+        // thread must still be captured normally, not suppressed to a reentrant
+        // event (e.g. hooking both encryptString and the CipherOutputStream.write
+        // it calls).
+        if (active.has(tid)) {
           send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov, reentrant: true, thread: tid });
           return target.apply(this, args);
         }
         active.add(tid);
-        const argsD = args.map(describe);
+        let argsD: any;
+        try { argsD = args.map(describe); } finally { active.delete(tid); }
         let retD: any = null, threw = false;
         try {
-          const r = target.apply(this, args);
-          retD = describe(r);
+          const r = target.apply(this, args);          // original runs with the guard released
+          active.add(tid);
+          try { retD = describe(r); } finally { active.delete(tid); }
           return r;
         } catch (e: any) {
           threw = true; retD = { error: String(e) };
@@ -122,7 +130,6 @@ rpc.exports = {
         } finally {
           send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov,
                  args: argsD, ret: retD, threw, thread: tid });
-          active.delete(tid);
         }
       };
       result = { hook: `${cls}.${method}`, since_seq: SEQ };
