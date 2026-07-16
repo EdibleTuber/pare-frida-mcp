@@ -80,13 +80,16 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("load_script", "medium", "Load a bundled script export set.",
              _in(session_id={"type": "string"}, name={"type": "string"})),
     ToolSpec("execute_script", "critical",
-             "Evaluate arbitrary JS in an attached session. NATIVE / Process / "
-             "Memory escape hatch ONLY: this ad-hoc script has NO Java (or ObjC) "
-             "bridge - Frida 17 removed the `Java` global, so any script "
-             "referencing `Java` fails with 'Java is not defined'. For Java work "
-             "use enumerate_classes / enumerate_methods / java_hook instead, which "
-             "run in the bundled agent that DOES load the bridge. Omit session_id "
-             "to target the most-recent live session.",
+             "Evaluate arbitrary JS in an attached session - a NATIVE / Process / "
+             "Memory escape hatch AND a pure-JS compute sandbox. It runs in a bare "
+             "QuickJS runtime: NO Java (or ObjC) bridge - Frida 17 removed the "
+             "`Java` global, so any script referencing `Java` fails with 'Java is "
+             "not defined' - and NO browser/DOM globals (`atob`, `btoa`, `fetch`, "
+             "`window`). For Java work use enumerate_classes / enumerate_methods / "
+             "java_hook instead, which run in the bundled agent that DOES load the "
+             "bridge. For offline byte math / decoding (Base64, hex, XOR), write "
+             "plain JS - implement your own decoder - which runs here fine without "
+             "any bridge. Omit session_id to target the most-recent live session.",
              _in(session_id={"type": "string"}, source={"type": "string"})),
     ToolSpec("java_hook", "high",
              "Install an OBSERVING Java method hook (captures decoded arguments "
