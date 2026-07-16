@@ -65,6 +65,33 @@ async def select_device(device_id: str) -> str:
         return _err("select_device failed", e)
 
 
+def _resolve_named_target(device, target: str):
+    """Resolve a non-numeric attach target to ``(pid, name)``.
+
+    An Android app is normally named by its *package identifier*, which frida
+    exposes as an application ``identifier`` (the running process's ``name`` is
+    the app label, e.g. "Attack me if u can"). So match the applications list
+    first — by identifier or label, only when it has a live pid — then fall back
+    to an exact process-name match. Returns ``(None, None)`` if nothing running
+    matches. Devices without application enumeration fall straight through.
+    """
+    try:
+        try:
+            apps = device.enumerate_applications(scope="minimal")
+        except TypeError:
+            apps = device.enumerate_applications()
+        for a in apps:
+            apid = getattr(a, "pid", 0) or 0
+            if apid and target in (getattr(a, "identifier", None), getattr(a, "name", None)):
+                return apid, getattr(a, "identifier", None) or target
+    except Exception:
+        pass  # no app enumeration on this device — try processes
+    for p in device.enumerate_processes():
+        if p.name == target:
+            return p.pid, p.name
+    return None, None
+
+
 async def attach(target: str = "", device_id: str = "") -> str:
     try:
         d = devices_mod.get_device(device_id or None)
@@ -72,10 +99,9 @@ async def attach(target: str = "", device_id: str = "") -> str:
             pid = int(target)
             name = str(pid)
         else:
-            matches = [p for p in d.enumerate_processes() if p.name == target]
-            if not matches:
-                return _err(f"process {target!r} not found")
-            pid, name = matches[0].pid, matches[0].name
+            pid, name = _resolve_named_target(d, target)
+            if pid is None:
+                return _err(f"{target!r} not found as a running application or process")
         dev_id = getattr(d, "id", None)
         existing = MANAGER.find_live_session(pid, dev_id)
         if existing is not None:
