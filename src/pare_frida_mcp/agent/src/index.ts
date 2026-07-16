@@ -85,53 +85,85 @@ rpc.exports = {
     });
     return out;
   },
-  javaHookInstall(cls: string, method: string, overload?: string[]) {
+  javaHookInstall(cls: string, method: string, overload?: any[]) {
     let result: any = { hook: `${cls}.${method}`, since_seq: SEQ };
     Java.perform(() => {
       const klass: any = Java.use(cls);
       const m: any = klass[method];
-      let target: any;
+
+      const argTypesOf = (t: any): string[] =>
+        (t.argumentTypes ? t.argumentTypes.map((x: any) => x.className) : []);
+
+      // Install the observing hook (decoded args + return) on one resolved overload.
+      const installOn = (target: any, ov: string[]) => {
+        target.implementation = function (...args: any[]) {
+          const tid = Process.getCurrentThreadId();
+          // Re-entrancy guard is held ONLY while decoding, so describe() can never
+          // recurse into a hooked method. It is deliberately NOT held across
+          // target.apply: a hooked callee invoked by a hooked caller on the same
+          // thread must still be captured normally, not suppressed to a reentrant
+          // event (e.g. hooking both encryptString and the CipherOutputStream.write
+          // it calls).
+          if (active.has(tid)) {
+            send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov, reentrant: true, thread: tid });
+            return target.apply(this, args);
+          }
+          active.add(tid);
+          let argsD: any;
+          try { argsD = args.map(describe); } finally { active.delete(tid); }
+          let retD: any = null, threw = false;
+          try {
+            const r = target.apply(this, args);          // original runs with the guard released
+            active.add(tid);
+            try { retD = describe(r); } finally { active.delete(tid); }
+            return r;
+          } catch (e: any) {
+            threw = true; retD = { error: String(e) };
+            throw e;
+          } finally {
+            send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov,
+                   args: argsD, ret: retD, threw, thread: tid });
+          }
+        };
+      };
+
+      // Hook EVERY overload of the method; return each one's descriptor list.
+      const hookAll = (): string[][] => {
+        const all = (m.overloads && m.overloads.length) ? m.overloads : [m];
+        const hooked: string[][] = [];
+        for (const t of all) { const ov = argTypesOf(t); installOn(t, ov); hooked.push(ov); }
+        return hooked;
+      };
+
       if (overload && overload.length) {
-        target = m.overload.apply(m, overload);
-      } else if (m.overloads && m.overloads.length > 1) {
+        // Try the caller's overload as given (frida wants descriptor strings, e.g.
+        // "[B"). If it does not resolve — callers, especially LLMs, often pass a
+        // non-descriptor shape — do NOT fail silently: hook every overload so a
+        // correct target still fires, and report the valid descriptors so the
+        // caller can refine. Shape-agnostic: handles any unresolvable input.
+        try {
+          const target = m.overload.apply(m, overload);
+          const ov = argTypesOf(target);
+          installOn(target, ov);
+          result = { hook: `${cls}.${method}`, overload: ov, since_seq: SEQ };
+        } catch (e: any) {
+          const hooked = hookAll();
+          result = { hook: `${cls}.${method}`, since_seq: SEQ,
+            note: `overload ${JSON.stringify(overload)} did not resolve; hooked all `
+                  + `${hooked.length} overload(s) instead`,
+            overloads: hooked };
+        }
+        return;
+      }
+
+      if (m.overloads && m.overloads.length > 1) {
         result = { ambiguous: true,
           overloads: m.overloads.map((o: any) => o.argumentTypes.map((t: any) => t.className)) };
         return;
-      } else {
-        target = m;
       }
-      const ov: string[] = (overload && overload.length)
-        ? overload
-        : (target.argumentTypes ? target.argumentTypes.map((t: any) => t.className) : []);
-      target.implementation = function (...args: any[]) {
-        const tid = Process.getCurrentThreadId();
-        // Re-entrancy guard is held ONLY while decoding, so describe() can never
-        // recurse into a hooked method. It is deliberately NOT held across
-        // target.apply: a hooked callee invoked by a hooked caller on the same
-        // thread must still be captured normally, not suppressed to a reentrant
-        // event (e.g. hooking both encryptString and the CipherOutputStream.write
-        // it calls).
-        if (active.has(tid)) {
-          send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov, reentrant: true, thread: tid });
-          return target.apply(this, args);
-        }
-        active.add(tid);
-        let argsD: any;
-        try { argsD = args.map(describe); } finally { active.delete(tid); }
-        let retD: any = null, threw = false;
-        try {
-          const r = target.apply(this, args);          // original runs with the guard released
-          active.add(tid);
-          try { retD = describe(r); } finally { active.delete(tid); }
-          return r;
-        } catch (e: any) {
-          threw = true; retD = { error: String(e) };
-          throw e;
-        } finally {
-          send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov,
-                 args: argsD, ret: retD, threw, thread: tid });
-        }
-      };
+
+      const target = (m.overloads && m.overloads.length) ? m.overloads[0] : m;
+      installOn(target, argTypesOf(target));
       result = { hook: `${cls}.${method}`, since_seq: SEQ };
     });
     return result;
