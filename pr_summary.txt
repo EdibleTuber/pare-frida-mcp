@@ -1,0 +1,50 @@
+  ## Summary
+
+  v1 Android slice of `pare-frida-mcp` — a Python/FastMCP stdio worker that
+  gives the PARE agent Frida 17 dynamic-instrumentation tools. 13 tools
+  (devices, attach, java_hook/java_hook_remove, memory r/w/scan/enum,
+  execute_script, search/read_capture); SQLite per-session capture store
+  with promoted indexed columns + FTS5 and blob spill; bundled JS agent.
+
+  ## Gating (read this if nothing else)
+
+  Worker declares per-tool `risk_tier` in `list_tools` (passes
+  `agent_core`'s `assert_conformance`). PARE's runtime `RiskAwareToolPool`
+  currently sources the declared tier from worker-wide `risk_default` +
+  name-pattern overrides; **the `risk_overrides:` workers.yaml parser is
+  a PARE-side follow-up not yet shipped**. Until it ships, this worker is
+  gated only at `risk_default: low`. Treat `execute_script` and
+  `write_memory` accordingly.
+
+  ## What's verified
+
+  - Unit + integration: 26 passed (`pytest tests/unit tests/integration`)
+  - `agent_core` contract conformance — `tests/integration/test_conformance.py`
+  - stdio handshake via `MCPClient` — `tests/integration/test_stdio_handshake.py`
+  - Real Frida flows on rooted Android emulator —
+    `tests/device/test_android_flows.py` (attach + enumerate + read_memory
+    + java_hook against `system_server`)
+
+  ## Tracked-incomplete (works, known limits) — see spec §9
+
+  - `PARE_FRIDA_MAX_DISK_PER_SESSION` not enforced
+  - Pump: per-row commits, no background flusher, `_on_message`
+    not thread-locked
+  - `search_capture` truncation fallback returns `matches[:len//2]` w/o re-bounding
+
+  ## Fast-follow (deferred features) — see spec §9
+
+  iOS pack, SSL/root/JB bypasses, script vault + maturity ladder,
+  `search_blob`, `scan_memory`, spawn-with-suspend semantics.
+
+  ## Notes for the next person
+
+  - Frida 17 moved `Java` out of core → bundle uses `frida-java-bridge`
+  - `frida-server` must run as root on the device for attach
+  - Bundled `dist/agent.js` is committed; rebuild with `make agent`
+
+  ## Test plan
+
+  - [ ] `pytest tests/unit tests/integration` clean
+  - [ ] `pytest tests/device/` clean against a rooted Android + frida-server
+  - [ ] `pare-frida-mcp` console script launches and serves stdio MCP

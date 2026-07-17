@@ -42,6 +42,9 @@ def test_execute_script_description_warns_no_java_bridge():
     desc = {s.name: s for s in TOOL_SPECS}["execute_script"].description.lower()
     assert "java" in desc and "bridge" in desc
     assert "enumerate_classes" in desc
+    # The bare QuickJS runtime also lacks browser/DOM globals; the model hit
+    # `atob` before `Java` in a live run, so the spec must name that gap too.
+    assert "atob" in desc
 
 def test_enumerate_classes_description_notes_case_insensitive_package():
     # Filter matches the loaded Java package, which can differ (incl. case) from
