@@ -212,8 +212,14 @@ async def execute_script(source: str, session_id: str = "") -> str:
         if res["error"]:
             return _ok(f"script error: {res['error']}",
                        sends=res["sends"], logs=res["logs"], error=res["error"])
-        return _ok(f"eval complete: {len(res['sends'])} send(s), {len(res['logs'])} log(s)",
-                   sends=res["sends"], logs=res["logs"], error=None)
+        summary = f"eval complete: {len(res['sends'])} send(s), {len(res['logs'])} log(s)"
+        extra = {"sends": res["sends"], "logs": res["logs"], "error": None}
+        value = res.get("value")
+        if value is not None:                    # the script's completion value (e.g. a trailing solve())
+            vs = repr(value)
+            summary += f"; value={vs if len(vs) <= 200 else vs[:197] + '...'}"
+            extra["value"] = value
+        return _ok(summary, **extra)
     except Exception as e:
         return _err("execute_script failed", e)
 
