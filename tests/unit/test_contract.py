@@ -46,6 +46,13 @@ def test_execute_script_description_warns_no_java_bridge():
     # `atob` before `Java` in a live run, so the spec must name that gap too.
     assert "atob" in desc
 
+def test_execute_script_description_notes_completion_value_return():
+    # The model wrote `solve();` expecting the return; the tool now surfaces the
+    # completion value as `value`, and the spec must tell the model it need not send() it.
+    desc = {s.name: s for s in TOOL_SPECS}["execute_script"].description.lower()
+    assert "value" in desc
+    assert "completion value" in desc
+
 def test_enumerate_classes_description_notes_case_insensitive_package():
     # Filter matches the loaded Java package, which can differ (incl. case) from
     # the application id shown in /apps; matching is case-insensitive.

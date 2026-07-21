@@ -89,7 +89,11 @@ TOOL_SPECS: list[ToolSpec] = [
              "java_hook instead, which run in the bundled agent that DOES load the "
              "bridge. For offline byte math / decoding (Base64, hex, XOR), write "
              "plain JS - implement your own decoder - which runs here fine without "
-             "any bridge. Omit session_id to target the most-recent live session.",
+             "any bridge. The script's completion value - the value of its last "
+             "statement, e.g. the return of a trailing `solve()` - comes back as "
+             "`value`; you do NOT need to `send()` it (use `send()` only for "
+             "intermediate/streamed output). Omit session_id to target the "
+             "most-recent live session.",
              _in(session_id={"type": "string"}, source={"type": "string"})),
     ToolSpec("java_hook", "high",
              "Install an OBSERVING Java method hook (captures decoded arguments "

@@ -131,3 +131,64 @@ async def test_execute_script_tool_success_lists_sends_and_logs(monkeypatch):
         assert "capture" not in doc
     finally:
         T.MANAGER._sessions.pop(sid, None)
+
+
+# --- completion-value capture (execute_script return-value gap) ---------------
+
+def test_source_is_wrapped_to_capture_completion_value():
+    """The source is wrapped so its completion value (e.g. the return of a trailing
+    solve()) is auto-captured via indirect eval + a marked send — the model does not
+    have to remember to send() it."""
+    captured = {}
+
+    class CapSession:
+        def create_script(self, source):
+            captured["source"] = source
+            return FakeAdHocScript()
+
+    scripts_mod.execute_ad_hoc(CapSession(), "solve()")
+    src = captured["source"]
+    assert "__adhoc_result__" in src          # the result marker is injected
+    assert "(0,eval)" in src                    # completion value via indirect eval
+    assert json.dumps("solve()") in src         # original source embedded as a JS string
+
+
+def test_completion_value_captured_as_value_not_a_user_send():
+    script = FakeAdHocScript(messages=[
+        {"type": "send", "payload": {"__adhoc_result__": True, "value": "SuperSecret"}},
+    ])
+    res = scripts_mod.execute_ad_hoc(FakeSession(script), "solve()")
+    assert res["value"] == "SuperSecret"
+    assert res["sends"] == []                    # the marked result is NOT a user send
+    assert res["error"] is None
+
+
+def test_user_sends_and_completion_value_coexist():
+    script = FakeAdHocScript(messages=[
+        {"type": "send", "payload": "user1"},
+        {"type": "send", "payload": {"__adhoc_result__": True, "value": 42}},
+    ])
+    res = scripts_mod.execute_ad_hoc(FakeSession(script), "send('user1'); 42")
+    assert res["sends"] == ["user1"]
+    assert res["value"] == 42
+
+
+def test_value_is_none_when_no_completion_marker():
+    script = FakeAdHocScript(messages=[{"type": "send", "payload": "x"}])
+    res = scripts_mod.execute_ad_hoc(FakeSession(script), "send('x')")
+    assert res.get("value") is None
+    assert res["sends"] == ["x"]
+
+
+@pytest.mark.asyncio
+async def test_execute_script_tool_surfaces_value(monkeypatch):
+    sid = new_session_id()
+    T.MANAGER._sessions[sid] = _DummySession()
+    monkeypatch.setattr(scripts_mod, "execute_ad_hoc", lambda fsess, src: {
+        "sends": [], "logs": [], "error": None, "value": "SuperSecret"})
+    try:
+        doc = json.loads(await T.execute_script(source="solve()", session_id=sid))
+        assert doc["value"] == "SuperSecret"
+        assert "SuperSecret" in doc["summary"]   # visible in the summary, not just a field
+    finally:
+        T.MANAGER._sessions.pop(sid, None)
