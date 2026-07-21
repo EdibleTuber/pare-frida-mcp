@@ -3,6 +3,15 @@
 A Python FastMCP stdio worker that gives the PARE reverse-engineering agent
 Frida 17 dynamic-instrumentation tools for Android (v1).
 
+## Role in the RE loop
+
+These tools serve the **Verify** beat of PARE's reverse-engineering loop ([Orient → Enumerate → Hypothesize → Verify → Re-orient](https://github.com/EdibleTuber/PARE#how-pare-works-the-re-loop)) — dynamic analysis *confirms* the hypothesis that static analysis ([`pare-static-mcp`](https://github.com/EdibleTuber/pare-static-mcp)) formed, rather than re-discovering it:
+
+- **Verify (observe)** — `java_hook` installs an observing hook and `read_hook_events` reads what it captured after the operator triggers the in-app action. An empty read means "not triggered yet," **not** a dead-end — trigger and read again.
+- **Verify (compute)** — `execute_script` runs pure JS in a bare QuickJS sandbox (no Java bridge) for offline byte math / decoding; the script's completion value comes back as `value`, so a `transform(candidate) == target` check needs no device round-trip.
+
+When Verify surfaces something static didn't predict (a runtime-only class, a native call), that is a lead back to static — PARE **Re-orients**. PARE is the hub that drives these tools and carries the loop — see [PARE](https://github.com/EdibleTuber/PARE).
+
 ## Status
 
 Android v1: device/process discovery, attach, script load + ad-hoc eval, the
