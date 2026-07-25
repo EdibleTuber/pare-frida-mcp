@@ -8,8 +8,8 @@ class _Exports:
     def __init__(self, result):
         self._result = result
         self.calls = []
-    def java_hook_install(self, cls, method, overload):
-        self.calls.append((cls, method, overload))
+    def java_hook_install(self, cls, method, overload, capture_this):
+        self.calls.append((cls, method, overload, capture_this))
         return self._result
 
 
@@ -35,7 +35,7 @@ async def test_overload_list_passed_through():
                                        overload=["[B", "int", "int"], session_id=sid))
     assert res.get("error") is not True
     assert res["hook"]["since_seq"] == 7
-    assert T.MANAGER.get(sid).script.exports_sync.calls == [("C", "write", ["[B", "int", "int"])]
+    assert T.MANAGER.get(sid).script.exports_sync.calls == [("C", "write", ["[B", "int", "int"], [])]
 
 
 @pytest.mark.asyncio
