@@ -49,6 +49,21 @@ function describe(v: any): any {
   } catch (e) { return { error: String(e) }; }
 }
 
+// A frida-java-bridge field wrapper exposes a `value` getter; a method wrapper
+// does not. When a field name collides with a same-named method, the bridge
+// remaps the field to a suffixed accessor `_<name>`, so a raw-name read would
+// resolve to the METHOD wrapper (value === undefined). Resolve to a real field.
+function isFieldWrapper(w: any): boolean {
+  return w != null && typeof w === "object" && "value" in w;
+}
+function resolveField(holder: any, name: string): { found: boolean; wrapper?: any } {
+  let w = holder[name];
+  if (isFieldWrapper(w)) return { found: true, wrapper: w };
+  w = holder["_" + name];                       // bridge collision spelling
+  if (isFieldWrapper(w)) return { found: true, wrapper: w };
+  return { found: false };
+}
+
 rpc.exports = {
   modules(filter?: string) {
     const needle = (filter ?? "").toLowerCase();
@@ -85,7 +100,55 @@ rpc.exports = {
     });
     return out;
   },
-  javaHookInstall(cls: string, method: string, overload?: any[]) {
+  javaReadFields(cls: string, fields?: string[]) {
+    const out: any = { cls, instance_count: 0, instances: [], static_fields: {}, capped: false };
+    Java.perform(() => {
+      const klass: any = Java.use(cls);                 // throws if class not loaded -> caught by handler
+      const Modifier: any = Java.use("java.lang.reflect.Modifier");
+      const wanted: string[] = (fields && fields.length)
+        ? fields
+        : klass.class.getDeclaredFields().map((f: any) => f.getName());
+      const MAX_INSTANCES = 10, MAX_FIELDS = 64;
+      const names = wanted.slice(0, MAX_FIELDS);
+      if (wanted.length > names.length) out.capped = true;
+
+      // Partition by the field's OWN modifier, not by instance count.
+      const staticNames: string[] = [], instanceNames: string[] = [];
+      for (const n of names) {
+        try {
+          const f = klass.class.getDeclaredField(n);
+          (Modifier.isStatic(f.getModifiers()) ? staticNames : instanceNames).push(n);
+        } catch (e) { instanceNames.push(n); }   // not declared here -> resolver reports not-found
+      }
+
+      // Static fields: read once off the class wrapper, no instance needed.
+      for (const n of staticNames) {
+        try {
+          const acc = resolveField(klass, n);
+          out.static_fields[n] = acc.found ? describe(acc.wrapper.value) : { error: "field not found" };
+        } catch (e: any) { out.static_fields[n] = { error: String(e) }; }
+      }
+
+      // Instance fields: read off each live instance.
+      if (instanceNames.length) Java.choose(cls, {
+        onMatch(inst: any) {
+          if (out.instances.length >= MAX_INSTANCES) { out.capped = true; return; }
+          const fv: any = {};
+          for (const n of instanceNames) {
+            try {
+              const acc = resolveField(inst, n);
+              fv[n] = acc.found ? describe(acc.wrapper.value) : { error: "field not found" };
+            } catch (e: any) { fv[n] = { error: String(e) }; }
+          }
+          out.instances.push({ fields: fv });
+        },
+        onComplete() {},
+      });
+      out.instance_count = out.instances.length;
+    });
+    return out;
+  },
+  javaHookInstall(cls: string, method: string, overload?: any[], captureThis?: string[]) {
     let result: any = { hook: `${cls}.${method}`, since_seq: SEQ };
     Java.perform(() => {
       const klass: any = Java.use(cls);
@@ -111,18 +174,31 @@ rpc.exports = {
           active.add(tid);
           let argsD: any;
           try { argsD = args.map(describe); } finally { active.delete(tid); }
-          let retD: any = null, threw = false;
+          let retD: any = null, threw = false, thisD: any = null;
           try {
             const r = target.apply(this, args);          // original runs with the guard released
             active.add(tid);
-            try { retD = describe(r); } finally { active.delete(tid); }
+            try {
+              retD = describe(r);
+              if (captureThis && captureThis.length) {   // same guard bracket as retD
+                thisD = {};
+                for (const n of captureThis) {
+                  try {
+                    const acc = resolveField(this, n);
+                    thisD[n] = acc.found ? describe(acc.wrapper.value) : { error: "field not found" };
+                  } catch (e: any) { thisD[n] = { error: String(e) }; }
+                }
+              }
+            } finally { active.delete(tid); }
             return r;
           } catch (e: any) {
-            threw = true; retD = { error: String(e) };
+            threw = true; retD = { error: String(e) };   // capture_this NOT read on the throw path
             throw e;
           } finally {
-            send({ hook: true, seq: ++SEQ, class: cls, method, overload: ov,
-                   args: argsD, ret: retD, threw, thread: tid });
+            const ev: any = { hook: true, seq: ++SEQ, class: cls, method, overload: ov,
+                              args: argsD, ret: retD, threw, thread: tid };
+            if (thisD !== null) ev.this = thisD;         // only present when captured
+            send(ev);
           }
         };
       };
