@@ -253,7 +253,8 @@ async def java_read_fields(cls: str, fields: list | None = None,
                 f"no live instance of {cls} and no static value - trigger the "
                 f"action then retry, or install java_hook with capture_this to "
                 f"capture state at the call site",
-                cls=cls, instance_count=0, instances=[], static_fields={})
+                cls=cls, instance_count=0, instances=[], static_fields={},
+                capped=False)
         parts = []
         if ic:
             parts.append(f"{ic} instance(s) of {cls}"
@@ -267,7 +268,8 @@ async def java_read_fields(cls: str, fields: list | None = None,
             if isinstance(fv, str):
                 summary += f'; {fn}="{fv[:120]}"'
         return _ok(summary, cls=cls, instance_count=ic,
-                   instances=instances, static_fields=statics)
+                   instances=instances, static_fields=statics,
+                   capped=res.get("capped", False))
     except Exception as e:
         return _err("java_read_fields failed", e)
 

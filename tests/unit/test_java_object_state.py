@@ -34,6 +34,7 @@ async def test_read_fields_instance_envelope(monkeypatch):
         assert doc["instances"] == [{"fields": {"plainText": "s3cr3t"}}]
         assert doc["instance_count"] == 1
         assert 'plainText="s3cr3t"' in doc["summary"]   # value folded inline
+        assert doc["capped"] is False
     finally:
         T.MANAGER._sessions.pop(sid, None)
 

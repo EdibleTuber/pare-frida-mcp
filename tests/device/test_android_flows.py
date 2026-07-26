@@ -75,7 +75,7 @@ async def test_read_fields_recovers_plaintext_in_one_call():
         input(f"\n[operator] open '{OMTG_MEM}' in the app, then press Enter...")
         doc = json.loads(await T.java_read_fields(cls=OMTG_MEM, fields=["plainText"], session_id=sid))
         assert doc.get("error") is not True, doc
-        vals = [i["fields"].get("plainText") for i in doc.get("instances", [])]
+        vals = [i.get("fields", {}).get("plainText") for i in doc.get("instances", [])]
         assert any(isinstance(v, str) and v for v in vals), doc     # non-empty plaintext recovered
     finally:
         T.MANAGER.get(sid).frida_session.detach()
