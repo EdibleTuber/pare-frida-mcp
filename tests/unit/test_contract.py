@@ -26,9 +26,41 @@ def test_adapter_matches_agent_core_shape():
     for t in tools:
         assert {"name", "risk_tier", "input_schema", "output_schema"} <= set(t)
 
-def test_tool_count_is_18():
-    # 17 (+ enumerate_classes/methods) -> 18 (+ read_hook_events)
-    assert len(TOOL_SPECS) == 18
+def test_tool_count_is_19():
+    # 18 (+ java_read_fields) -> 19
+    assert len(TOOL_SPECS) == 19
+
+
+def test_java_read_fields_is_high_tier():
+    by_name = {s.name: s for s in TOOL_SPECS}
+    assert by_name["java_read_fields"].risk_tier == "high"
+
+
+def test_java_read_fields_description_leads_with_trigger():
+    desc = {s.name: s for s in TOOL_SPECS}["java_read_fields"].description.lower()
+    # steers the model from the stuck "ran but returned nothing" state to this tool
+    assert "field" in desc
+    assert "no re-trigger" in desc or "reads current" in desc
+    assert "static" in desc
+
+
+def test_java_hook_schema_and_description_cover_capture_this():
+    spec = {s.name: s for s in TOOL_SPECS}["java_hook"]
+    assert "capture_this" in spec.input_schema["properties"]
+    desc = spec.description.lower()
+    assert "capture_this" in desc
+    # the widened-capture disclosure for the high-tier approver / audit log
+    assert "object state" in desc or "widen" in desc
+
+
+def test_read_hook_events_description_crosslinks_read_fields():
+    desc = {s.name: s for s in TOOL_SPECS}["read_hook_events"].description.lower()
+    assert "java_read_fields" in desc
+
+
+def test_execute_script_redirect_includes_read_fields():
+    desc = {s.name: s for s in TOOL_SPECS}["execute_script"].description
+    assert "java_read_fields" in desc
 
 
 def test_read_hook_events_is_low():

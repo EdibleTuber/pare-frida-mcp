@@ -86,8 +86,9 @@ TOOL_SPECS: list[ToolSpec] = [
              "`Java` global, so any script referencing `Java` fails with 'Java is "
              "not defined' - and NO browser/DOM globals (`atob`, `btoa`, `fetch`, "
              "`window`). For Java work use enumerate_classes / enumerate_methods / "
-             "java_hook instead, which run in the bundled agent that DOES load the "
-             "bridge. For offline byte math / decoding (Base64, hex, XOR), write "
+             "java_hook / java_read_fields instead, which run in the bundled agent "
+             "that DOES load the bridge. For offline byte math / decoding (Base64, "
+             "hex, XOR), write "
              "plain JS - implement your own decoder - which runs here fine without "
              "any bridge. The script's completion value - the value of its last "
              "statement, e.g. the return of a trailing `solve()` - comes back as "
@@ -102,13 +103,37 @@ TOOL_SPECS: list[ToolSpec] = [
              "descriptors, one per parameter (e.g. [\"[B\",\"int\",\"int\"]); "
              "omit it for a non-overloaded method - if the method is overloaded "
              "the call returns the available descriptor lists to choose from. "
-             "Read what the hook captured with read_hook_events (start at the "
-             "since_seq this call returns). WARNING: hooking an ultra-hot method "
-             "(e.g. String.<init>) floods the buffer; a per-thread guard prevents "
-             "recursion but the signal will be noisy.",
+             "Pass 'capture_this' (a list of field names) to ALSO snapshot those "
+             "fields of 'this' AT the hook site, captured on the NEXT call (you "
+             "must be able to re-trigger the action); if you have ALREADY "
+             "triggered it, use java_read_fields instead. capture_this widens "
+             "what this hook records from arguments/return to arbitrary named "
+             "object state. Read what the hook captured with read_hook_events "
+             "(start at the since_seq this call returns). WARNING: hooking an "
+             "ultra-hot method (e.g. String.<init>) floods the buffer; a "
+             "per-thread guard prevents recursion but the signal will be noisy.",
              _in(session_id={"type": "string"}, cls={"type": "string"},
                  method={"type": "string"},
-                 overload={"type": "array", "items": {"type": "string"}})),
+                 overload={"type": "array", "items": {"type": "string"}},
+                 capture_this={"type": "array", "items": {"type": "string"}})),
+    ToolSpec("java_read_fields", "high",
+             "Read Java OBJECT STATE - the value of instance and/or static "
+             "fields on a class - with no address needed. Use when a hook "
+             "confirmed a method ran but its args/return were empty (a void "
+             "method that stashes its result into a field), or when you need an "
+             "object's state and have no native address (read_memory needs one "
+             "you cannot get for a heap object). Reads CURRENT state now - no "
+             "re-trigger needed (contrast java_hook capture_this, which snapshots "
+             "at the NEXT call and needs a re-trigger). PREFER passing the field "
+             "name(s) from static analysis; OMIT 'fields' to dump every declared "
+             "field (instance and static) when you do not know the name. Instance "
+             "values come back under instances[].fields, static values under "
+             "static_fields (bounded: 10 instances, 64 fields). An EMPTY result "
+             "means no live instance yet - trigger the action then retry, or use "
+             "java_hook with capture_this. Omit session_id to target the "
+             "most-recent live session.",
+             _in(session_id={"type": "string"}, cls={"type": "string"},
+                 fields={"type": "array", "items": {"type": "string"}})),
     ToolSpec("java_hook_remove", "low", "Remove a previously installed Java method "
              "hook. 'overload' is the same descriptor list used to install it.",
              _in(session_id={"type": "string"}, cls={"type": "string"},
@@ -122,7 +147,9 @@ TOOL_SPECS: list[ToolSpec] = [
              "page the rest; lost>0 means old events were evicted (read more "
              "often / raise the buffer). An EMPTY result means the hooked action "
              "has not been triggered yet - retry after the app action, do not "
-             "remove the hook. Tier low: the sensitive act (choosing what to "
+             "remove the hook. A NON-EMPTY event whose ret is null means the "
+             "method ran but returned nothing - read the resulting object state "
+             "with java_read_fields. Tier low: the sensitive act (choosing what to "
              "capture) was already gated at java_hook.",
              _in(since_seq={"type": "integer"}, limit={"type": "integer"},
                  session_id={"type": "string"})),
