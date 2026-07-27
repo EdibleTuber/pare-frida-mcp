@@ -225,10 +225,10 @@ async def execute_script(source: str, session_id: str = "") -> str:
 
 
 async def java_hook(cls: str, method: str, overload: list | None = None,
-                    session_id: str = "") -> str:
+                    capture_this: list | None = None, session_id: str = "") -> str:
     try:
         s = _resolve_session(session_id)
-        res = java_mod.java_hook(s.script, cls, method, overload)
+        res = java_mod.java_hook(s.script, cls, method, overload, capture_this)
         if isinstance(res, dict) and res.get("ambiguous"):
             return json.dumps({
                 "summary": f"{cls}.{method} is overloaded - retry java_hook with "
@@ -237,6 +237,41 @@ async def java_hook(cls: str, method: str, overload: list | None = None,
         return _ok(f"hook installed: {cls}.{method}", hook=res)
     except Exception as e:
         return _err("java_hook failed", e)
+
+
+async def java_read_fields(cls: str, fields: list | None = None,
+                           session_id: str = "") -> str:
+    try:
+        s = _resolve_session(session_id)
+        res = java_mod.java_read_fields(s.script, cls, fields)
+        ic = res.get("instance_count", 0)
+        instances = res.get("instances", [])
+        statics = res.get("static_fields", {}) or {}
+        note = " (capped)" if res.get("capped") else ""
+        if ic == 0 and not statics:
+            return _ok(
+                f"no live instance of {cls} and no static value - trigger the "
+                f"action then retry, or install java_hook with capture_this to "
+                f"capture state at the call site",
+                cls=cls, instance_count=0, instances=[], static_fields={},
+                capped=False)
+        parts = []
+        if ic:
+            parts.append(f"{ic} instance(s) of {cls}"
+                         + (" (multiple - ambiguous)" if ic > 1 else ""))
+        if statics:
+            parts.append(f"{len(statics)} static field(s)")
+        summary = "; ".join(parts) + note
+        # Fold a single string value inline so the model can succeed off the summary.
+        if ic == 1 and len(instances[0].get("fields", {})) == 1:
+            (fn, fv), = instances[0]["fields"].items()
+            if isinstance(fv, str):
+                summary += f'; {fn}="{fv[:120]}"'
+        return _ok(summary, cls=cls, instance_count=ic,
+                   instances=instances, static_fields=statics,
+                   capped=res.get("capped", False))
+    except Exception as e:
+        return _err("java_read_fields failed", e)
 
 
 async def java_hook_remove(cls: str, method: str, overload: list | None = None,

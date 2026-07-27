@@ -53,3 +53,58 @@ async def test_enumerate_applications_on_emulator(usb_device):
     # The Android settings package is present on every emulator image.
     assert len(res["applications"]) >= 1, res
     assert any("settings" in a.get("identifier", "") for a in res["applications"]), res
+
+
+OMTG_APP = "sg.vp.owasp_mobile.omtg_android"
+OMTG_MEM = "sg.vp.owasp_mobile.OMTG_Android.OMTG_DATAST_011_Memory"
+
+
+async def _attach_omtg():
+    res = json.loads(await T.attach(target=OMTG_APP))
+    if "session_id" not in res:
+        pytest.skip(f"OMTG app not attachable: {res.get('summary')}")
+    return res["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_read_fields_recovers_plaintext_in_one_call():
+    """Root-cause falsification: after the operator triggers decryptString on the
+    OMTG_DATAST_011_Memory screen, one java_read_fields call returns plainText."""
+    sid = await _attach_omtg()
+    try:
+        input(f"\n[operator] open '{OMTG_MEM}' in the app, then press Enter...")
+        doc = json.loads(await T.java_read_fields(cls=OMTG_MEM, fields=["plainText"], session_id=sid))
+        assert doc.get("error") is not True, doc
+        vals = [i.get("fields", {}).get("plainText") for i in doc.get("instances", [])]
+        assert any(isinstance(v, str) and v for v in vals), doc     # non-empty plaintext recovered
+    finally:
+        T.MANAGER.get(sid).frida_session.detach()
+
+
+@pytest.mark.asyncio
+async def test_read_fields_dump_all_finds_plaintext():
+    """Omitting fields dumps declared fields; plainText appears among them."""
+    sid = await _attach_omtg()
+    try:
+        input(f"\n[operator] open '{OMTG_MEM}' in the app, then press Enter...")
+        doc = json.loads(await T.java_read_fields(cls=OMTG_MEM, session_id=sid))
+        assert doc.get("error") is not True, doc
+        assert any("plainText" in i.get("fields", {}) for i in doc.get("instances", [])), doc
+    finally:
+        T.MANAGER.get(sid).frida_session.detach()
+
+
+@pytest.mark.asyncio
+async def test_capture_this_snapshots_plaintext_at_hook_site():
+    """capture_this on decryptString surfaces this.plainText via read_hook_events."""
+    sid = await _attach_omtg()
+    try:
+        hook = json.loads(await T.java_hook(cls=OMTG_MEM, method="decryptString",
+                                            capture_this=["plainText"], session_id=sid))
+        assert hook.get("hook"), hook
+        input(f"\n[operator] open '{OMTG_MEM}' to trigger decryptString, then press Enter...")
+        ev = json.loads(await T.read_hook_events(since_seq=0, session_id=sid))
+        thises = [e.get("this", {}).get("plainText") for e in ev.get("events", [])]
+        assert any(isinstance(v, str) and v for v in thises), ev
+    finally:
+        T.MANAGER.get(sid).frida_session.detach()
