@@ -2,11 +2,21 @@ import shutil
 
 import pytest
 
+from pare_worker_kit import RISK_TIER_META_KEY
+
 from pare_frida_mcp.server import build_server
 from pare_frida_mcp.contract import TOOL_SPECS
-from agent_core.workers.risk import RISK_TIER_META_KEY
-from agent_core.workers.conformance import assert_stdio_conformance
-from agent_core.workers.types import WorkerSpec
+
+# agent_core is the DAEMON side. A machine that only runs this worker has no
+# reason to install it -- that is the point of depending on pare-worker-kit
+# instead -- so the checks that genuinely need agent_core's conformance
+# helpers skip when it is absent, exactly as the sibling files in this
+# directory already do.
+pytest.importorskip(
+    "agent_core.workers.conformance",
+    reason="agent_core is the daemon side and is not needed to run a worker")
+from agent_core.workers.conformance import assert_stdio_conformance   # noqa: E402
+from agent_core.workers.types import WorkerSpec                       # noqa: E402
 
 
 @pytest.mark.asyncio
