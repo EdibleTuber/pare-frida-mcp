@@ -4,7 +4,13 @@ from pare_frida_mcp import tools as T
 
 
 @pytest.mark.asyncio
-async def test_list_devices_includes_emulator():
+async def test_list_devices_includes_emulator(usb_device):
+    """Every other test in this directory gates on the usb_device fixture,
+    which skips when no device is attached. This one did not, so it HARD
+    FAILED on any machine without a running emulator -- which now includes
+    the headless inference server this project develops on, and every CI
+    runner. Requesting the fixture makes it skip like its neighbours instead
+    of reporting a missing emulator as a broken build."""
     res = json.loads(await T.list_devices())
     ids = {d["id"] for d in res.get("devices", [])}
     assert "emulator-5554" in ids
