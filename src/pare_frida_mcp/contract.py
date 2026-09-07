@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from pare_worker_kit import PRODUCES_RESULT
+
 CONTRACT_VERSION = 1
 
 _OBJ = {"type": "object", "properties": {}}
@@ -19,6 +21,12 @@ class ToolSpec:
     input_schema: dict[str, Any]
     output_schema: dict[str, Any] = field(default_factory=lambda: dict(_BOUNDED_OUT))
     handler: Callable[..., Any] | None = None
+    # What a call returns to the daemon: a tool RESULT, or an
+    # `artifact` descriptor naming a file left on this worker's disk.
+    # Defaults to result because that is what the wire contract means
+    # by an absent declaration -- a tool becomes artifact-producing
+    # only by saying so here.
+    produces: str = PRODUCES_RESULT
 
 
 def _in(**props) -> dict[str, Any]:
